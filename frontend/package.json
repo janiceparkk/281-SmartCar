@@ -1,31 +1,79 @@
 {
-	"name": "group2-281-car",
+	"name": "material-dashboard-2-react",
+	"version": "2.2.0",
 	"private": true,
-	"version": "0.0.0",
-	"type": "module",
-	"scripts": {
-		"dev": "vite",
-		"build": "vite build",
-		"lint": "eslint .",
-		"preview": "vite preview"
+	"author": "Creative Tim",
+	"license": "See license in https://www.creative-tim.com/license",
+	"description": "React version of Material Dashboard 2 by Creative Tim",
+	"bugs": {
+		"url": "https://github.com/creativetimofficial/material-dashboard-react/issues"
+	},
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/creativetimofficial/material-dashboard-react.git"
 	},
 	"dependencies": {
-		"react": "^19.1.1",
-		"react-dom": "^19.1.1"
+		"@emotion/cache": "11.10.8",
+		"@emotion/react": "11.10.8",
+		"@emotion/styled": "11.10.8",
+		"@mui/icons-material": "5.11.16",
+		"@mui/material": "5.12.3",
+		"chart.js": "4.3.0",
+		"chroma-js": "2.4.2",
+		"prop-types": "15.8.1",
+		"react": "18.2.0",
+		"react-chartjs-2": "5.2.0",
+		"react-dom": "18.2.0",
+		"react-github-btn": "1.4.0",
+		"react-router-dom": "6.11.0",
+		"react-table": "7.8.0",
+		"stylis": "4.1.4",
+		"stylis-plugin-rtl": "2.1.1",
+		"yup": "1.1.1"
+	},
+	"scripts": {
+		"start": "react-scripts start",
+		"build": "react-scripts build",
+		"test": "react-scripts test",
+		"eject": "react-scripts eject",
+		"install:clean": "rm -rf node_modules/ && rm -rf package-lock.json && npm install && npm start",
+		"lint": "eslint .",
+		"lint:fix": "eslint . --fix",
+		"format": "prettier --write \"**/*.{js,jsx,css,md,json}\" ./*.{js,md,json} --config ./.prettierrc.json"
+	},
+	"eslintConfig": {
+		"extends": [
+			"react-app",
+			"react-app/jest"
+		]
+	},
+	"browserslist": {
+		"production": [
+			">0.2%",
+			"not dead",
+			"not op_mini all"
+		],
+		"development": [
+			"last 1 chrome version",
+			"last 1 firefox version",
+			"last 1 safari version"
+		]
 	},
 	"devDependencies": {
-		"@eslint/js": "^9.36.0",
-		"@types/react": "^19.1.16",
-		"@types/react-dom": "^19.1.9",
-		"@vitejs/plugin-react": "^5.0.4",
-		"eslint": "^9.38.0",
-		"eslint-config-prettier": "^10.1.8",
-		"eslint-plugin-prettier": "^5.5.4",
+		"@eslint/js": "^9.39.1",
+		"ajv": "^7.2.4",
+		"eslint": "^9.39.1",
+		"eslint-config-prettier": "8.8.0",
+		"eslint-plugin-import": "2.27.5",
+		"eslint-plugin-jsx-a11y": "6.7.1",
+		"eslint-plugin-prettier": "4.2.1",
 		"eslint-plugin-react": "^7.37.5",
-		"eslint-plugin-react-hooks": "^5.2.0",
-		"eslint-plugin-react-refresh": "^0.4.22",
-		"globals": "^16.4.0",
-		"prettier": "^3.6.2",
-		"vite": "^7.1.7"
+		"eslint-plugin-react-hooks": "^7.0.1",
+		"eslint-plugin-react-refresh": "^0.4.24",
+		"prettier": "2.8.8",
+		"react-scripts": "^5.0.1"
+	},
+	"overrides": {
+		"svgo": "3.0.2"
 	}
 }
