@@ -84,7 +84,7 @@ module.exports = function authRouter({
 			let associatedCar = null;
 			if (user.role === "CarOwner") {
 				const result = await pgPool.query(
-					'SELECT car_id FROM "SMART_CARS" WHERE user_id = $1',
+					'SELECT car_id FROM smart_cars WHERE user_id = $1',
 					[user.user_id]
 				);
 				associatedCar = result.rows[0];

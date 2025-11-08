@@ -17,7 +17,7 @@ module.exports = function carRouter({
 	router.get("/", authMiddleware, async (req, res) => {
 		try {
 			// NOTE: In a complete app, this query would be filtered by req.user.id for CarOwners
-			const result = await pgPool.query('SELECT * FROM "SMART_CARS"');
+			const result = await pgPool.query('SELECT * FROM smart_cars');
 			res.json(result.rows);
 		} catch (error) {
 			console.error("Error fetching cars:", error);

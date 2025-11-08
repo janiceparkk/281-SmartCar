@@ -16,6 +16,12 @@ require("dotenv").config();
 const authRouter = require("./routes/authRoutes");
 const carRouter = require("./routes/carRoutes");
 const alertRouter = require("./routes/alertRoutes");
+const deviceRouter = require("./routes/deviceRoutes");
+// const statsRouter = require("./routes/statsRoutes");
+// const userRouter = require("./routes/userRoutes");
+
+// Import MQTT Service for Phase 2 Real-time Connectivity
+const MQTTService = require("./services/mqttService");
 
 const app = express();
 const server = http.createServer(app);
@@ -55,6 +61,7 @@ pgPool
 		console.log("[DB] PostgreSQL connected successfully.");
 		client.release();
 		createCarTable();
+		createDeviceTable();
 	})
 	.catch((err) =>
 		console.error(
@@ -76,6 +83,25 @@ mongoose
 		)
 	);
 
+// 3. MQTT Service Connection (Phase 2: Real-time Device Connectivity)
+const mqttService = new MQTTService({
+	brokerUrl: process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883',
+	heartbeatTimeout: 60000,  // 60 seconds
+	idleTimeout: 300000,      // 5 minutes
+	offlineTimeout: 1800000   // 30 minutes
+});
+
+// Initialize MQTT connection
+mqttService.connect()
+	.then(() => {
+		console.log("[MQTT] Service initialized successfully.");
+		setupMQTTEventHandlers();
+	})
+	.catch((err) => {
+		console.error("[MQTT] Service initialization failed:", err.message);
+		console.warn("[MQTT] System will continue without MQTT connectivity.");
+	});
+
 // --- MongoDB Schemas and Models ---
 
 const AlertSchema = new mongoose.Schema(
@@ -86,6 +112,10 @@ const AlertSchema = new mongoose.Schema(
 		sound_classification: { type: String },
 		confidence_score: { type: Number, required: true },
 		status: { type: String, default: "Active", index: true },
+		acknowledged_by: { type: String }, // user_id who acknowledged
+		acknowledged_at: { type: Date },
+		closed_by: { type: String }, // user_id who closed
+		closed_at: { type: Date },
 	},
 	{ timestamps: true }
 );
@@ -135,13 +165,21 @@ const authMiddleware = (req, res, next) => {
 	}
 };
 
+/** Middleware to check if user is Admin */
+const adminMiddleware = (req, res, next) => {
+	if (req.user.role !== "Admin") {
+		return res.status(403).json({ message: "Access denied. Admin only." });
+	}
+	next();
+};
+
 // --- Core Database Services (Used by Routes and WS) ---
 
 /** Registers a new smart car/device in PostgreSQL. */
 async function registerSmartCar(data) {
 	const carId = data.carId || `CAR${Math.floor(Math.random() * 10000)}`;
 	const result = await pgPool.query(
-		`INSERT INTO "SMART_CARS" (car_id, user_id, model, status, last_heartbeat)
+		`INSERT INTO smart_cars (car_id, user_id, model, status, last_heartbeat)
          VALUES ($1, $2, $3, $4, $5) RETURNING *`,
 		[
 			carId,
@@ -157,7 +195,7 @@ async function registerSmartCar(data) {
 
 async function createCarTable() {
 	const query = `
-        CREATE TABLE IF NOT EXISTS "SMART_CARS" (
+        CREATE TABLE IF NOT EXISTS smart_cars (
             car_id VARCHAR(50) PRIMARY KEY,
             user_id VARCHAR(50) NOT NULL,
             model VARCHAR(100),
@@ -172,7 +210,7 @@ async function createCarTable() {
 		console.log("[DB] PostgreSQL Car table verified/created.");
 		// Pre-register a mock car if not exists for testing the agent connection
 		const countResult = await pgPool.query(
-			'SELECT COUNT(*) FROM "SMART_CARS" WHERE car_id = $1',
+			'SELECT COUNT(*) FROM smart_cars WHERE car_id = $1',
 			["CAR1000"]
 		);
 		if (parseInt(countResult.rows[0].count) === 0) {
@@ -187,10 +225,47 @@ async function createCarTable() {
 	}
 }
 
+async function createDeviceTable() {
+	const query = `
+		CREATE TABLE IF NOT EXISTS iot_devices (
+			device_id VARCHAR(50) PRIMARY KEY,
+			car_id VARCHAR(50) REFERENCES smart_cars(car_id) ON DELETE CASCADE,
+			device_type VARCHAR(100),
+			status VARCHAR(50),
+			firmware_version VARCHAR(50),
+			certificate_data TEXT,
+			mqtt_client_id VARCHAR(100),
+			last_heartbeat TIMESTAMP WITH TIME ZONE,
+			connection_quality JSONB,
+			created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+			updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+		);
+	`;
+	try {
+		await pgPool.query(query);
+		console.log("[DB] PostgreSQL IoT Devices table verified/created.");
+		// Pre-register a mock device for testing
+		const countResult = await pgPool.query(
+			'SELECT COUNT(*) FROM iot_devices WHERE device_id = $1',
+			["IOT-001"]
+		);
+		if (parseInt(countResult.rows[0].count) === 0) {
+			await registerDevice({
+				deviceId: "IOT-001",
+				carId: "CAR1000",
+				deviceType: "Temperature Sensor",
+				firmwareVersion: "1.0.0",
+			});
+		}
+	} catch (err) {
+		console.error("[DB] Error creating IoT devices table:", err.message);
+	}
+}
+
 /** Retrieves a car record from PostgreSQL. */
 async function getSmartCarById(carId) {
 	const result = await pgPool.query(
-		'SELECT * FROM "SMART_CARS" WHERE car_id = $1',
+		'SELECT * FROM smart_cars WHERE car_id = $1',
 		[carId]
 	);
 	return result.rows[0] || null;
@@ -199,7 +274,7 @@ async function getSmartCarById(carId) {
 /** Updates a car's real-time telemetry and status in PostgreSQL. */
 async function updateCarTelemetry(carId, lat, lon, status) {
 	const query = `
-        UPDATE "SMART_CARS"
+        UPDATE smart_cars
         SET current_latitude = $1,
             current_longitude = $2,
             status = $3,
@@ -257,6 +332,250 @@ async function logAudioAlert(alertData) {
 	}
 }
 
+/** Get cars owned by a specific user (multi-tenant filtering) */
+async function getCarsByUserId(userId) {
+	const result = await pgPool.query(
+		'SELECT * FROM smart_cars WHERE user_id = $1',
+		[userId]
+	);
+	return result.rows;
+}
+
+/** Check if user owns a specific car (authorization helper) */
+async function userOwnsCar(userId, carId) {
+	const result = await pgPool.query(
+		'SELECT 1 FROM smart_cars WHERE car_id = $1 AND user_id = $2',
+		[carId, userId]
+	);
+	return result.rows.length > 0;
+}
+
+/** Registers a new IoT device in PostgreSQL. */
+async function registerDevice(data) {
+	const deviceId = data.deviceId || `IOT-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
+	const mqttClientId = `mqtt_client_${deviceId}`;
+	
+	// Basic certificate validation
+	if (data.certificate) {
+		if (!validateDeviceCertificate(data.certificate)) {
+			throw new Error("Invalid device certificate provided.");
+		}
+	}
+	
+	// Verify the car exists before assigning device
+	const car = await getSmartCarById(data.carId);
+	if (!car) {
+		throw new Error(`Car with ID ${data.carId} does not exist.`);
+	}
+	
+	const result = await pgPool.query(
+		`INSERT INTO iot_devices (device_id, car_id, device_type, status, firmware_version, certificate_data, mqtt_client_id, last_heartbeat, connection_quality)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *`,
+		[
+			deviceId,
+			data.carId,
+			data.deviceType,
+			"Offline", // Default status
+			data.firmwareVersion || "1.0.0",
+			data.certificate || null,
+			mqttClientId,
+			new Date(),
+			JSON.stringify({ latency: 0, signalStrength: 0, packetLoss: 0 })
+		]
+	);
+	console.log(`[DB] Registered new IoT device: ${result.rows[0].device_id} for car ${data.carId}`);
+	return result.rows[0];
+}
+
+/** Validates device X.509 certificate format and structure */
+function validateDeviceCertificate(certificate) {
+	if (!certificate || typeof certificate !== 'string') {
+		return false;
+	}
+	
+	// Basic certificate format validation
+	const certRegex = /-----BEGIN CERTIFICATE-----[\s\S]*-----END CERTIFICATE-----/;
+	if (!certRegex.test(certificate)) {
+		return false;
+	}
+	
+	// Additional validation could include:
+	// - Certificate expiration check
+	// - CA signature validation  
+	// - Certificate chain verification
+	// For now, we'll accept properly formatted certificates
+	
+	console.log(`[Security] Certificate validated for device registration`);
+	return true;
+}
+
+/** Retrieves a device record from PostgreSQL. */
+async function getDeviceById(deviceId) {
+	const result = await pgPool.query(
+		'SELECT * FROM iot_devices WHERE device_id = $1',
+		[deviceId]
+	);
+	return result.rows[0] || null;
+}
+
+/** Retrieves devices by car ID from PostgreSQL. */
+async function getDevicesByCarId(carId) {
+	const result = await pgPool.query(
+		'SELECT * FROM iot_devices WHERE car_id = $1 ORDER BY created_at DESC',
+		[carId]
+	);
+	return result.rows;
+}
+
+/** Updates a device's status and connection info in PostgreSQL. */
+async function updateDeviceStatus(deviceId, status, connectionQuality) {
+	const query = `
+		UPDATE iot_devices
+		SET status = $1,
+			connection_quality = $2,
+			last_heartbeat = NOW(),
+			updated_at = NOW()
+		WHERE device_id = $3
+		RETURNING *;
+	`;
+	const result = await pgPool.query(query, [
+		status,
+		JSON.stringify(connectionQuality || {}),
+		deviceId
+	]);
+	return result.rows[0];
+}
+
+// --- MQTT Event Handlers (Phase 2: Real-time Connectivity) ---
+
+/**
+ * Set up event handlers for MQTT service events
+ * Bridges MQTT events to database updates and WebSocket broadcasts
+ */
+function setupMQTTEventHandlers() {
+	console.log("[MQTT] Setting up event handlers...");
+
+	// Device heartbeat received
+	mqttService.on('device_heartbeat', async (data) => {
+		const { deviceId, connectionQuality } = data;
+		try {
+			const updatedDevice = await updateDeviceStatus(
+				deviceId,
+				'Online',
+				connectionQuality
+			);
+			if (updatedDevice) {
+				// Broadcast to dashboard
+				broadcastDeviceStatus(updatedDevice);
+			}
+		} catch (error) {
+			console.error(`[MQTT] Error updating heartbeat for ${deviceId}:`, error.message);
+		}
+	});
+
+	// Device telemetry received
+	mqttService.on('device_telemetry', async (data) => {
+		const { deviceId, data: telemetryData } = data;
+		try {
+			// Update device status to Online
+			const updatedDevice = await updateDeviceStatus(
+				deviceId,
+				'Online',
+				telemetryData.connectionQuality || {}
+			);
+
+			// If telemetry includes car location, update the car record
+			if (telemetryData.lat && telemetryData.lon && updatedDevice) {
+				const updatedCar = await updateCarTelemetry(
+					updatedDevice.car_id,
+					telemetryData.lat,
+					telemetryData.lon,
+					'Online'
+				);
+				if (updatedCar) {
+					broadcastCarStatus(updatedCar);
+				}
+			}
+
+			// Broadcast device status update
+			if (updatedDevice) {
+				broadcastDeviceStatus(updatedDevice);
+			}
+		} catch (error) {
+			console.error(`[MQTT] Error processing telemetry for ${deviceId}:`, error.message);
+		}
+	});
+
+	// Device event received (audio events, alerts, etc.)
+	mqttService.on('device_event', async (data) => {
+		const { deviceId, eventType, eventData } = data;
+		try {
+			const device = await getDeviceById(deviceId);
+			if (!device) {
+				console.warn(`[MQTT] Device ${deviceId} not found in database`);
+				return;
+			}
+
+			// Handle audio events
+			if (eventType === 'audio_event' || eventData.type === 'audio_event') {
+				const newAlert = await logAudioAlert({
+					carId: device.car_id,
+					type: eventData.event || eventData.alert_type || 'Unknown Event',
+					classification: eventData.classification || eventData.sound_classification,
+					confidence: eventData.confidence || eventData.confidence_score || 0
+				});
+				broadcastAlert(newAlert);
+			}
+		} catch (error) {
+			console.error(`[MQTT] Error processing event for ${deviceId}:`, error.message);
+		}
+	});
+
+	// Device connected
+	mqttService.on('device_connected', async (data) => {
+		const { deviceId } = data;
+		console.log(`[MQTT] Device ${deviceId} connected`);
+		try {
+			const updatedDevice = await updateDeviceStatus(deviceId, 'Online', {});
+			if (updatedDevice) {
+				broadcastDeviceStatus(updatedDevice);
+			}
+		} catch (error) {
+			console.error(`[MQTT] Error handling connection for ${deviceId}:`, error.message);
+		}
+	});
+
+	// Device disconnected
+	mqttService.on('device_disconnected', async (data) => {
+		const { deviceId } = data;
+		console.log(`[MQTT] Device ${deviceId} disconnected`);
+		try {
+			const updatedDevice = await updateDeviceStatus(deviceId, 'Offline', {});
+			if (updatedDevice) {
+				broadcastDeviceStatus(updatedDevice);
+			}
+		} catch (error) {
+			console.error(`[MQTT] Error handling disconnection for ${deviceId}:`, error.message);
+		}
+	});
+
+	// Device state changed (Online -> Idle -> Offline -> No-Connection)
+	mqttService.on('device_state_changed', async (data) => {
+		const { deviceId, newState } = data;
+		console.log(`[MQTT] Device ${deviceId} state changed to ${newState}`);
+		try {
+			const updatedDevice = await updateDeviceStatus(deviceId, newState, {});
+			if (updatedDevice) {
+				broadcastDeviceStatus(updatedDevice);
+			}
+		} catch (error) {
+			console.error(`[MQTT] Error handling state change for ${deviceId}:`, error.message);
+		}
+	});
+
+	console.log("[MQTT] Event handlers configured successfully.");
+}
+
 // --- REST API Endpoints (Mounting the Routers) ---
 
 const dependencies = {
@@ -264,13 +583,23 @@ const dependencies = {
 	Alert,
 	pgPool,
 	authMiddleware,
+	adminMiddleware,
 	registerUser,
 	registerSmartCar,
+	getSmartCarById,
+	getCarsByUserId,
+	userOwnsCar,
+	updateCarTelemetry,
+	logAudioAlert,
+	registerDevice,
+	getDeviceById,
+	getDevicesByCarId,
+	updateDeviceStatus,
+	mqttService,
 	JWT_SECRET,
 	bcrypt,
 	jwt,
 };
-
 // 1. Authentication routes: /api/auth
 app.use("/api/auth", authRouter(dependencies));
 
@@ -279,6 +608,15 @@ app.use("/api/cars", carRouter(dependencies));
 
 // 3. Alert retrieval routes: /api/alerts
 app.use("/api/alerts", alertRouter(dependencies));
+
+// 4. Device management routes: /api/devices
+app.use("/api/devices", deviceRouter(dependencies));
+
+// // 5. Stats/Analytics routes: /api/stats
+// app.use("/api/stats", statsRouter(dependencies));
+
+// // 6. User management routes: /api/users (admin only)
+// app.use("/api/users", userRouter(dependencies));
 
 // --- WebSocket Server (For CARLA/IoT Real-Time Data Ingestion) ---
 
@@ -393,6 +731,26 @@ function broadcastAlert(alertData) {
 	const payload = JSON.stringify({
 		topic: "new_alert",
 		data: alertData,
+	});
+	wss.clients.forEach((client) => {
+		if (client.readyState === WebSocket.OPEN) {
+			client.send(payload);
+		}
+	});
+}
+
+/** Broadcasts device status updates to all connected WebSocket clients (dashboards). */
+function broadcastDeviceStatus(deviceData) {
+	const payload = JSON.stringify({
+		topic: "device_status_update",
+		data: {
+			device_id: deviceData.device_id,
+			car_id: deviceData.car_id,
+			status: deviceData.status,
+			connection_quality: deviceData.connection_quality,
+			last_heartbeat: deviceData.last_heartbeat,
+			firmware_version: deviceData.firmware_version,
+		},
 	});
 	wss.clients.forEach((client) => {
 		if (client.readyState === WebSocket.OPEN) {

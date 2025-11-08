@@ -5,3 +5,14 @@ node_modules/.*
 .DS_Store
 
 package-lock.json
+CLAUDE.md
+deliverable.pdf
+
+# Log files
+*.log
+backend/backend.log
+backend/frontend.log
+
+# MQTT data and logs
+backend/mqtt-data/
+backend/mqtt-logs/

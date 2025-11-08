@@ -23,40 +23,45 @@ CREATE TABLE IF NOT EXISTS user_roles (
     role_name VARCHAR(50) NOT NULL UNIQUE
 );
 
--- 2. users Table
--- Manages user authentication and personal metadata
+-- 2. users Table (DEPRECATED - Users are now stored in MongoDB)
+-- This table is kept for future reference but not used in current implementation
+-- User authentication is handled via MongoDB (see server.js UserSchema)
+-- PostgreSQL only stores car telemetry data with user_id as VARCHAR reference
 CREATE TABLE IF NOT EXISTS users (
-    user_id SERIAL PRIMARY KEY,
-    role_id INTEGER REFERENCES user_roles(role_id) ON DELETE RESTRICT, -- Foreign Key to user_roles
-    user_type VARCHAR(50),
-    name VARCHAR(100),  
-    email VARCHAR(255) NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    phone VARCHAR(50),
-    company_name VARCHAR(100),
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    user_id VARCHAR(50) PRIMARY KEY, -- MongoDB user_id string (for reference only)
+    name VARCHAR(100),
+    email VARCHAR(255) UNIQUE,
+    role VARCHAR(50), -- CarOwner, Admin, ServiceStaff
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    notes TEXT -- Optional metadata sync from MongoDB
 );
 
--- 3. smart_cars Table
+-- 3. smart_cars Table (matches server.js implementation)
 -- Core table for registered autonomous vehicles
 CREATE TABLE IF NOT EXISTS smart_cars (
-    car_id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE, -- Owner (Foreign Key to users)
+    car_id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL, -- MongoDB user_id string (no FK constraint due to different DB)
     model VARCHAR(100),
-    status VARCHAR(50),
-    current_latitude NUMERIC(9, 6),
-    current_longitude NUMERIC(9, 6),
-    last_updated TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+    status VARCHAR(20),
+    current_latitude DECIMAL(9, 6),
+    current_longitude DECIMAL(9, 6),
+    last_heartbeat TIMESTAMP WITH TIME ZONE
 );
 
 -- 4. iot_devices Table
--- Management of sensors/devices attached to smart cars
+-- Management of sensors/devices attached to smart cars (matches deliverable spec)
 CREATE TABLE IF NOT EXISTS iot_devices (
-    device_id SERIAL PRIMARY KEY,
-    car_id INTEGER REFERENCES smart_cars(car_id) ON DELETE CASCADE, -- Foreign Key to smart_cars
-    device_type VARCHAR(100),
-    status VARCHAR(50),
-    last_heartbeat TIMESTAMP WITH TIME ZONE
+    device_id VARCHAR(50) PRIMARY KEY, -- String device IDs like "IOT-001"
+    car_id VARCHAR(50) REFERENCES smart_cars(car_id) ON DELETE CASCADE, -- Foreign Key to smart_cars
+    device_type VARCHAR(100), -- Temperature Sensor, GPS Tracker, Camera Module, etc.
+    status VARCHAR(50), -- Online, Offline, Maintenance, Error
+    firmware_version VARCHAR(50),
+    certificate_data TEXT, -- X.509 certificate storage
+    mqtt_client_id VARCHAR(100),
+    last_heartbeat TIMESTAMP WITH TIME ZONE,
+    connection_quality JSONB, -- {latency, signalStrength, packetLoss}
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
 -- 5. training_datasets Table
@@ -97,7 +102,7 @@ CREATE TABLE IF NOT EXISTS model_training_runs (
 -- Tracks maintenance or service requests related to a car or device event
 CREATE TABLE IF NOT EXISTS service_requests (
     request_id SERIAL PRIMARY KEY,
-    car_id INTEGER REFERENCES smart_cars(car_id) ON DELETE RESTRICT,
+    car_id VARCHAR(50) REFERENCES smart_cars(car_id) ON DELETE RESTRICT,
     issue_type VARCHAR(100) NOT NULL,
     status VARCHAR(50) NOT NULL,
     priority VARCHAR(50),
@@ -119,7 +124,7 @@ CREATE TABLE IF NOT EXISTS service_logs (
 CREATE TABLE IF NOT EXISTS ml_model_prediction (
     prediction_id SERIAL PRIMARY KEY,
     model_id INTEGER REFERENCES ml_models(model_id) ON DELETE RESTRICT,
-    car_id INTEGER REFERENCES smart_cars(car_id) ON DELETE RESTRICT,
+    car_id VARCHAR(50) REFERENCES smart_cars(car_id) ON DELETE RESTRICT,
     request_id INTEGER REFERENCES service_requests(request_id) ON DELETE SET NULL, -- Can be NULL if no request was triggered
     predicted_issue JSONB,
     confidence_score TEXT[], -- Array of strings/numbers
@@ -134,15 +139,13 @@ CREATE TABLE IF NOT EXISTS ml_model_prediction (
 INSERT INTO user_roles (role_name) VALUES ('Admin'), ('CarOwner'), ('ServiceStaff')
 ON CONFLICT (role_name) DO NOTHING;
 
--- Insert a mock user (password_hash would be a real hash in production)
-INSERT INTO users (role_id, user_type, name, email, password_hash, phone, company_name)
+-- Insert a mock user reference (actual user data is in MongoDB)
+INSERT INTO users (user_id, name, email, role, notes)
 VALUES (
-    (SELECT role_id FROM user_roles WHERE role_name = 'CarOwner'),
-    'Individual',
+    'U001',
     'Test User',
     'test@example.com',
-    '$2a$10$wKzWj9v1Y0u8Yp5p4gB1f.eS3b0o4X0t0W8cQ0O5A4E0B4g6V4d6A', -- Mock hash for 'password'
-    '+1234567890',
-    'Test Company'
+    'CarOwner',
+    'Mock user - actual auth data in MongoDB'
 )
-ON CONFLICT (email) DO NOTHING;
+ON CONFLICT (user_id) DO NOTHING;

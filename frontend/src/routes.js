@@ -45,6 +45,10 @@ import Profile from "layouts/profile";
 import SignIn from "layouts/authentication/sign-in";
 import SignUp from "layouts/authentication/sign-up";
 
+// IoT Device Management & Monitoring (Phase 1 & 2)
+import Devices from "layouts/devices";
+import DeviceMonitoring from "layouts/device-monitoring";
+
 // @mui icons
 import Icon from "@mui/material/Icon";
 
@@ -56,6 +60,22 @@ const routes = [
 		icon: <Icon fontSize="small">dashboard</Icon>,
 		route: "/dashboard",
 		component: <Dashboard />,
+	},
+	{
+		type: "collapse",
+		name: "Device Management",
+		key: "devices",
+		icon: <Icon fontSize="small">devices</Icon>,
+		route: "/devices",
+		component: <Devices />,
+	},
+	{
+		type: "collapse",
+		name: "Device Monitoring",
+		key: "device-monitoring",
+		icon: <Icon fontSize="small">sensors</Icon>,
+		route: "/device-monitoring",
+		component: <DeviceMonitoring />,
 	},
 	{
 		type: "collapse",
