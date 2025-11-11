@@ -11,6 +11,7 @@ const { Pool } = require("pg");
 const authRouter = require("./routes/authRoutes");
 const carRouter = require("./routes/carRoutes");
 const alertRouter = require("./routes/alertRoutes");
+const deviceRouter = require("./routes/deviceRoutes");
 
 const app = express();
 app.use(cors());
@@ -63,6 +64,7 @@ app.use((req, res, next) => {
 // --- Routes ---
 app.use("/api/auth", authRouter);
 app.use("/api/cars", carRouter);
+app.use("/api/devices", deviceRouter);
 // app.use("/api/alerts", alertRouter);
 
 // --- WebSocket Server (For CARLA/IoT Real-Time Data Ingestion) ---
