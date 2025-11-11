@@ -12,7 +12,6 @@ async function registerUser({
 	company_name,
 }) {
 	try {
-		console.log("[DEBUG] Starting user registration for:", email);
 
 		// Check if user already exists in PostgreSQL
 		const existingUser = await pgPool.query(
@@ -57,11 +56,7 @@ async function registerUser({
 			]
 		);
 
-		console.log(
-			"[DEBUG] User created in PostgreSQL with ID:",
-			userResult.rows[0].user_id
-		);
-
+		
 		// Get role name for response
 		const userWithRole = {
 			...userResult.rows[0],
@@ -78,7 +73,6 @@ async function registerUser({
 /** Authenticates user against PostgreSQL */
 async function authenticateUser(email, password) {
 	try {
-		console.log("[DEBUG] authenticateUser called for:", email);
 
 		const userResult = await pgPool.query(
 			`SELECT u.user_id, u.name, u.email, u.password_hash, u.role_id, r.role_name
@@ -88,26 +82,20 @@ async function authenticateUser(email, password) {
 			[email]
 		);
 
-		console.log("[DEBUG] User query result count:", userResult.rows.length);
 
 		if (userResult.rows.length === 0) {
-			console.log("[DEBUG] No user found with email:", email);
 			return null;
 		}
 
 		const user = userResult.rows[0];
-		console.log("[DEBUG] User found:", user.user_id, user.email);
 
 		// Verify password
-		console.log("[DEBUG] Comparing password...");
 		const isPasswordValid = await bcrypt.compare(
 			password,
 			user.password_hash
 		);
-		console.log("[DEBUG] Password valid:", isPasswordValid);
 
 		if (!isPasswordValid) {
-			console.log("[DEBUG] Password invalid for user:", email);
 			return null;
 		}
 
@@ -119,10 +107,7 @@ async function authenticateUser(email, password) {
 
 		// Remove password hash from returned user object
 		const { password_hash, ...userWithoutPassword } = user;
-		console.log(
-			"[DEBUG] authenticateUser returning user:",
-			userWithoutPassword.user_id
-		);
+		
 
 		return userWithoutPassword;
 	} catch (error) {

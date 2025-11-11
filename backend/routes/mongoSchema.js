@@ -41,12 +41,12 @@ const AlertSchema = new mongoose.Schema(
 		location: {
 			latitude: Number,
 			longitude: Number,
-			accuracy: Number, // in meters
+			accuracy: Number, 
 		},
 		audio_context: {
-			duration: Number, // in seconds
+			duration: Number, 
 			decibel_level: Number,
-			frequency_range: [Number], // [min_freq, max_freq] in Hz
+			frequency_range: [Number],
 			timestamp: Date,
 		},
 		status: {
@@ -56,7 +56,7 @@ const AlertSchema = new mongoose.Schema(
 			index: true,
 		},
 		assigned_to: {
-			type: String, // User ID or service staff ID
+			type: String, 
 			required: false,
 		},
 		resolution_notes: {
@@ -107,17 +107,17 @@ const AudioStreamSchema = new mongoose.Schema(
 			index: true,
 		},
 		raw_audio_data: {
-			type: Buffer, // For storing binary audio data
-			required: false, // Optional since we might store references instead
+			type: Buffer, 
+			required: false, 
 		},
 		audio_file_path: {
-			type: String, // Alternative: store file path to audio files
+			type: String, 
 			required: false,
 		},
 		audio_features: [
 			{
-				feature_type: String, // e.g., "mfcc", "spectral_centroid", "zero_crossing_rate"
-				values: [Number], // Array of feature values
+				feature_type: String, 
+				values: [Number], 
 				timestamp: Date,
 			},
 		],
@@ -131,16 +131,16 @@ const AudioStreamSchema = new mongoose.Schema(
 			{
 				segment_start: Date,
 				segment_end: Date,
-				segment_duration: Number, // in seconds
+				segment_duration: Number, 
 			},
 		],
 		metadata: {
 			sample_rate: Number,
 			bit_depth: Number,
 			channels: Number,
-			duration: Number, // in seconds
+			duration: Number, 
 			file_format: String,
-			file_size: Number, // in bytes
+			file_size: Number,
 		},
 		status: {
 			type: String,
@@ -149,7 +149,7 @@ const AudioStreamSchema = new mongoose.Schema(
 		},
 	},
 	{
-		timestamps: true, // Adds createdAt and updatedAt
+		timestamps: true, 
 	}
 );
 
@@ -190,7 +190,7 @@ const RealTimeAnalyticsSchema = new mongoose.Schema(
 					scream: Number,
 					other: Number,
 				},
-				audio_processing_volume: Number, // MB processed
+				audio_processing_volume: Number, 
 				average_confidence: Number,
 				uptime_percentage: Number,
 			},
@@ -207,33 +207,33 @@ const RealTimeAnalyticsSchema = new mongoose.Schema(
 				},
 			],
 			temporal_patterns: {
-				peak_hours: [Number], // 0-23
-				weekly_trends: [Number], // 0-6 (Sunday-Saturday)
+				peak_hours: [Number], 
+				weekly_trends: [Number],
 			},
 			correlation_analysis: {
-				weather_impact: Map, // weather condition -> alert count
-				time_of_day_impact: Map, // hour -> alert count
+				weather_impact: Map, 
+				time_of_day_impact: Map, 
 			},
 		},
 		system_performance: {
-			total_audio_processed: Number, // in MB
-			average_processing_latency: Number, // in milliseconds
-			model_accuracy: Number, // 0-1
-			system_uptime: Number, // percentage
+			total_audio_processed: Number, 
+			average_processing_latency: Number, 
+			model_accuracy: Number, 
+			system_uptime: Number, 
 			active_cars: Number,
 			storage_usage: {
-				audio_data: Number, // in GB
-				analytics_data: Number, // in GB
-				total: Number, // in GB
+				audio_data: Number, 
+				analytics_data: Number, 
+				total: Number, 
 			},
 		},
 		aggregated_data: {
 			total_alerts: Number,
-			alerts_by_type: Map, // alert_type -> count
+			alerts_by_type: Map, 
 			average_confidence_score: Number,
 			most_common_sound: String,
-			geographic_coverage: Number, // number of unique locations
-			data_throughput: Number, // MB per hour
+			geographic_coverage: Number, 
+			data_throughput: Number, 
 		},
 	},
 	{

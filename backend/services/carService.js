@@ -114,7 +114,6 @@ async function getSmartCarById(carId, userRole, userId) {
 
 /** Register a new car with permission check */
 async function registerSmartCar(data, userRole, userId) {
-	console.log("[DEBUG] registerSmartCar called with data:", data);
 
 	// Determine which user ID to use
 	let postgresUserId;
@@ -147,10 +146,7 @@ async function registerSmartCar(data, userRole, userId) {
 		throw new Error(`User with ID ${postgresUserId} not found`);
 	}
 
-	console.log(
-		"[DEBUG] Inserting car with PostgreSQL user_id:",
-		postgresUserId
-	);
+	
 
 	const result = await pgPool.query(
 		`INSERT INTO smart_cars (user_id, model, status, last_updated)

@@ -6,8 +6,7 @@ const { registerSmartCar } = require("../services/carService");
 
 router.use((req, res, next) => {
 	const authHeader = req.header("Authorization");
-	console.log("[CAR DEBUG] Authorization Header:", authHeader);
-	console.log("[CAR DEBUG] Full headers:", req.headers);
+	
 	next();
 });
 
