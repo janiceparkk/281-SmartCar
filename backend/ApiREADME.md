@@ -1,22 +1,18 @@
-✅ Base URL
-----------
+## ✅ Base URL
 
 `http://localhost:5000/api`
 
-✅ Required Header for all secured routes
-----------------------------------------
+## ✅ Required Header for all secured routes
 
 `{
   Authorization: "Bearer <JWT_TOKEN>"
 }`
 
-* * * * *
+---
 
-🔐 AUTH ROUTES
-==============
+# 🔐 AUTH ROUTES
 
-**1\. Register User**
----------------------
+## **1\. Register User**
 
 ```bash
 axios.post("/auth/register", {
@@ -27,8 +23,7 @@ axios.post("/auth/register", {
 });
 ```
 
-**2\. Login User**
-------------------
+## **2\. Login User**
 
 ```bash
 const { data } = await axios.post("/auth/login", {
@@ -40,15 +35,13 @@ const token = data.token;
 const userId = data.id;
 ```
 
-* * * * *
+---
 
-🚗 CAR ROUTES
-=============
+# 🚗 CAR ROUTES
 
-* * * * *
+---
 
-**1\. GET /api/cars -- Get ALL cars (Admin sees all, CarOwner sees all)**
-========================================================================
+# **1\. GET /api/cars -- Get ALL cars (Admin sees all, CarOwner sees all)**
 
 ```bash
 axios.get("/cars", {
@@ -56,10 +49,9 @@ axios.get("/cars", {
 });
 ```
 
-* * * * *
+---
 
-**2\. POST /api/cars -- Register a new car**
-===========================================
+# **2\. POST /api/cars -- Register a new car**
 
 ### ✅ CarOwner registering **their OWN** car
 
@@ -105,10 +97,9 @@ axios.post("/cars",
 );
 ```
 
-* * * * *
+---
 
-**3\. GET /api/cars/user -- Get current user's cars**
-====================================================
+# **3\. GET /api/cars/user -- Get current user's cars**
 
 ```bash
 axios.get("/cars/user", {
@@ -116,10 +107,9 @@ axios.get("/cars/user", {
 });
 ```
 
-* * * * *
+---
 
-**4\. GET /api/cars/user/:userId -- Admin OR owner only**
-========================================================
+# **4\. GET /api/cars/user/:userId -- Admin OR owner only**
 
 ### ✅ Admin accessing any user
 
@@ -145,10 +135,19 @@ axios.get(`/cars/user/9999`, {
 });
 ```
 
-
-
 ### To setup Psql in linux:
+
 ```bash
 cd relationalDB
 ./initPsql.sh
+```
+
+### Setup before running server.js/all in one:
+
+```bash
+./initMongoDB.sh
+cd relationalDB/
+./initPsql.sh
+cd ..
+node server.js
 ```
