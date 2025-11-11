@@ -144,6 +144,8 @@ cd relationalDB
 
 ### Setup before running server.js/all in one:
 
+## Before doing so, make sure you have mongodb installed. Here's a link for instruction: https://www.mongodb.com/docs/manual/installation/
+
 ```bash
 ./initMongoDB.sh
 cd relationalDB/
