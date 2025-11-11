@@ -143,7 +143,11 @@ CREATE TABLE IF NOT EXISTS device_firmware (
     checksum VARCHAR(64), -- SHA256 checksum for integrity verification
     changelog TEXT,
     compatibility_list TEXT[], -- Array of compatible device types
-    is_active BOOLEAN DEFAULT true
+    is_active BOOLEAN DEFAULT true,
+    -- Service compatibility aliases
+    release_notes TEXT, -- Alias for changelog (used by firmwareService.js)
+    download_url TEXT, -- Alias for s3_location (used by firmwareService.js)
+    file_size BIGINT -- Alias for file_size_bytes (used by firmwareService.js)
 );
 
 -- 12. device_connections Table
@@ -155,6 +159,8 @@ CREATE TABLE IF NOT EXISTS device_connections (
     disconnected_at TIMESTAMP WITH TIME ZONE,
     ip_address INET,
     protocol VARCHAR(20), -- 'MQTT' or 'WebSocket'
+    connection_type VARCHAR(20), -- Alias for protocol (used by connectionTracker.js)
+    status VARCHAR(20), -- 'active' or 'disconnected' (used by connectionTracker.js)
     disconnect_reason TEXT,
     session_duration INTERVAL GENERATED ALWAYS AS (disconnected_at - connected_at) STORED
 );
@@ -170,11 +176,16 @@ CREATE TABLE IF NOT EXISTS device_commands (
     priority VARCHAR(20) DEFAULT 'normal', -- 'critical', 'high', 'normal', 'low'
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     executed_at TIMESTAMP WITH TIME ZONE,
-    result JSONB -- Execution result/error details
+    result JSONB, -- Execution result/error details
+    -- Additional columns for commandProcessor.js
+    timeout_seconds INTEGER DEFAULT 30, -- Command timeout in seconds
+    sent_at TIMESTAMP WITH TIME ZONE, -- When command was sent to device
+    completed_at TIMESTAMP WITH TIME ZONE -- When command completed/failed
 );
 
 -- 14. device_telemetry_summary Table
--- Aggregated device health metrics and location data
+-- Stores individual telemetry readings from devices (time-series data)
+-- Note: Despite the name "summary", this stores raw telemetry data
 CREATE TABLE IF NOT EXISTS device_telemetry_summary (
     summary_id SERIAL PRIMARY KEY,
     device_id INTEGER REFERENCES iot_devices(device_id) ON DELETE CASCADE,
@@ -187,7 +198,9 @@ CREATE TABLE IF NOT EXISTS device_telemetry_summary (
     temperature NUMERIC(5, 2), -- Celsius
     cpu_usage NUMERIC(5, 2), -- Percentage
     memory_usage NUMERIC(5, 2), -- Percentage
-    signal_strength INTEGER -- dBm or percentage
+    signal_strength INTEGER, -- dBm or percentage
+    error_codes TEXT, -- Error codes from device
+    metadata JSONB -- Additional flexible telemetry data
 );
 
 -- Enhance iot_devices table with firmware and certificate support
