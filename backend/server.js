@@ -63,7 +63,7 @@ app.use((req, res, next) => {
 // --- Routes ---
 app.use("/api/auth", authRouter);
 app.use("/api/cars", carRouter);
-// app.use("/api/alerts", alertRouter);
+app.use("/api/alerts", alertRouter);
 
 // --- WebSocket Server (For CARLA/IoT Real-Time Data Ingestion) ---
 //  Just a AI gen Place holder, will need IoT part will handle this
