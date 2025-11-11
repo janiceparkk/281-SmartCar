@@ -12,7 +12,6 @@ const authRouter = require("./routes/authRoutes");
 const carRouter = require("./routes/carRoutes");
 const alertRouter = require("./routes/alertRoutes");
 
-
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -41,6 +40,16 @@ const pgPool = new Pool({
 	port: process.env.PG_PORT,
 });
 
+pgPool
+	.connect()
+	.then((client) => {
+		console.log("✅ Connected to PostgreSQL successfully.");
+		client.release();
+	})
+	.catch((err) => {
+		console.error("❌ Failed to connect to PostgreSQL:", err.message);
+	});
+
 // --- Database Middleware ---
 app.use((req, res, next) => {
 	req.db = {
@@ -50,7 +59,6 @@ app.use((req, res, next) => {
 	};
 	next();
 });
-
 
 // --- Routes ---
 app.use("/api/auth", authRouter);
@@ -189,4 +197,3 @@ server.listen(PORT, () => {
 		`PostgreSQL DB: ${process.env.PG_DATABASE} on port ${process.env.PG_PORT}`
 	);
 });
-

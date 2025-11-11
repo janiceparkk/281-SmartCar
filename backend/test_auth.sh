@@ -268,7 +268,7 @@ test_protected_endpoint() {
     
     # This assumes you have a protected endpoint at /api/cars
     # Adjust the endpoint as needed for your application
-    response=$(curl -s -w "\n%{http_code}" -X GET "http://localhost:3000/api/cars" \
+    response=$(curl -s -w "\n%{http_code}" -X GET "http://localhost:5000/api/cars" \
         -H "Authorization: Bearer $JWT_TOKEN" \
         -H "Content-Type: application/json")
     
