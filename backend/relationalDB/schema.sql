@@ -10,6 +10,10 @@ DROP TABLE IF EXISTS service_requests CASCADE;
 DROP TABLE IF EXISTS model_training_runs CASCADE;
 DROP TABLE IF EXISTS ml_models CASCADE;
 DROP TABLE IF EXISTS training_datasets CASCADE;
+DROP TABLE IF EXISTS device_telemetry_summary CASCADE;
+DROP TABLE IF EXISTS device_commands CASCADE;
+DROP TABLE IF EXISTS device_connections CASCADE;
+DROP TABLE IF EXISTS device_firmware CASCADE;
 DROP TABLE IF EXISTS iot_devices CASCADE;
 DROP TABLE IF EXISTS smart_cars CASCADE;
 DROP TABLE IF EXISTS users CASCADE;
@@ -126,6 +130,72 @@ CREATE TABLE IF NOT EXISTS ml_model_prediction (
     confidence_score TEXT[], -- Array of strings/numbers
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
+
+-- 11. device_firmware Table
+-- Manages firmware versions and OTA update information
+CREATE TABLE IF NOT EXISTS device_firmware (
+    firmware_id SERIAL PRIMARY KEY,
+    version VARCHAR(50) NOT NULL UNIQUE,
+    device_type VARCHAR(100) NOT NULL, -- Compatibility filter
+    release_date TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    s3_location TEXT, -- S3 URL for firmware binary
+    file_size_bytes BIGINT,
+    checksum VARCHAR(64), -- SHA256 checksum for integrity verification
+    changelog TEXT,
+    compatibility_list TEXT[], -- Array of compatible device types
+    is_active BOOLEAN DEFAULT true
+);
+
+-- 12. device_connections Table
+-- Tracks MQTT/WebSocket connection sessions for real-time monitoring
+CREATE TABLE IF NOT EXISTS device_connections (
+    connection_id SERIAL PRIMARY KEY,
+    device_id INTEGER REFERENCES iot_devices(device_id) ON DELETE CASCADE,
+    connected_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    disconnected_at TIMESTAMP WITH TIME ZONE,
+    ip_address INET,
+    protocol VARCHAR(20), -- 'MQTT' or 'WebSocket'
+    disconnect_reason TEXT,
+    session_duration INTERVAL GENERATED ALWAYS AS (disconnected_at - connected_at) STORED
+);
+
+-- 13. device_commands Table
+-- Command queue and execution tracking for remote device control
+CREATE TABLE IF NOT EXISTS device_commands (
+    command_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    device_id INTEGER REFERENCES iot_devices(device_id) ON DELETE CASCADE,
+    command_type VARCHAR(100) NOT NULL, -- 'reboot', 'update_firmware', 'diagnostics', 'lock', 'unlock'
+    parameters JSONB, -- Flexible command parameters
+    status VARCHAR(50) NOT NULL DEFAULT 'queued', -- 'queued', 'executing', 'completed', 'failed'
+    priority VARCHAR(20) DEFAULT 'normal', -- 'critical', 'high', 'normal', 'low'
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    executed_at TIMESTAMP WITH TIME ZONE,
+    result JSONB -- Execution result/error details
+);
+
+-- 14. device_telemetry_summary Table
+-- Aggregated device health metrics and location data
+CREATE TABLE IF NOT EXISTS device_telemetry_summary (
+    summary_id SERIAL PRIMARY KEY,
+    device_id INTEGER REFERENCES iot_devices(device_id) ON DELETE CASCADE,
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    latitude NUMERIC(9, 6),
+    longitude NUMERIC(9, 6),
+    altitude NUMERIC(8, 2), -- Meters
+    speed NUMERIC(6, 2), -- km/h
+    battery_level NUMERIC(5, 2), -- Percentage
+    temperature NUMERIC(5, 2), -- Celsius
+    cpu_usage NUMERIC(5, 2), -- Percentage
+    memory_usage NUMERIC(5, 2), -- Percentage
+    signal_strength INTEGER -- dBm or percentage
+);
+
+-- Enhance iot_devices table with firmware and certificate support
+ALTER TABLE iot_devices
+ADD COLUMN IF NOT EXISTS current_firmware_id INTEGER REFERENCES device_firmware(firmware_id) ON DELETE SET NULL,
+ADD COLUMN IF NOT EXISTS certificate_issuer VARCHAR(255),
+ADD COLUMN IF NOT EXISTS certificate_expiry TIMESTAMP WITH TIME ZONE,
+ADD COLUMN IF NOT EXISTS last_firmware_update TIMESTAMP WITH TIME ZONE;
 
 -- -----------------------------------------------------------
 -- Example Data Inserts (Optional)
