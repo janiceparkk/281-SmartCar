@@ -5,7 +5,9 @@ const { authMiddleware } = require("./helper");
 const {
 	registerDevice,
 	getDevices,
-	getDeviceById
+	getActiveDevices,
+	getDeviceById,
+	updateDevice,
 } = require("../controllers/deviceController");
 
 // Apply authentication middleware to all device routes
@@ -19,12 +21,7 @@ router.post("/register", async (req, res) => {
 		const userId = req.user.id;
 
 		// Extract device data from request body
-		const {
-			deviceType,
-			carId,
-			firmwareVersion,
-			certificate,
-		} = req.body;
+		const { deviceType, carId, firmwareVersion, certificate } = req.body;
 
 		// Validate required fields
 		if (!deviceType || !carId) {
@@ -64,7 +61,9 @@ router.post("/register", async (req, res) => {
 	} catch (error) {
 		console.error("Device Registration Error:", error.message);
 		res.status(500).json({
-			message: error.message || "Failed to register device due to server error.",
+			message:
+				error.message ||
+				"Failed to register device due to server error.",
 		});
 	}
 });
@@ -84,7 +83,7 @@ router.get("/", async (req, res) => {
 			userId,
 			carId,
 			deviceType,
-			status
+			status,
 		});
 
 		res.status(200).json({
@@ -96,6 +95,24 @@ router.get("/", async (req, res) => {
 		console.error("Get Devices Error:", error.message);
 		res.status(500).json({
 			message: "Failed to retrieve devices due to server error.",
+		});
+	}
+});
+
+// GET /api/devices/active
+router.get("/active", async (req, res) => {
+	try {
+		const activeDevices = await getActiveDevices();
+
+		res.status(200).json({
+			message: "Active Devices retrieved successfully",
+			count: activeDevices.length,
+			devices: activeDevices,
+		});
+	} catch (error) {
+		console.error("Get Active Devices Error:", error.message);
+		res.status(500).json({
+			message: "Failed to retrieve active devices due to server error.",
 		});
 	}
 });
@@ -117,7 +134,7 @@ router.get("/:deviceId", async (req, res) => {
 		const device = await getDeviceById({
 			deviceId,
 			userRole,
-			userId
+			userId,
 		});
 
 		if (!device) {
@@ -134,6 +151,59 @@ router.get("/:deviceId", async (req, res) => {
 		console.error("Get Device By ID Error:", error.message);
 		res.status(500).json({
 			message: "Failed to retrieve device due to server error.",
+		});
+	}
+});
+
+// PATCH /api/devices/:deviceId
+router.patch("/:deviceId", async (req, res) => {
+	try {
+		const userRole = req.user.role;
+		const userId = req.user.id;
+		const deviceId = parseInt(req.params.deviceId);
+		const updates = req.body;
+
+		const device = await getDeviceById({
+			deviceId,
+			userRole,
+			userId,
+		});
+
+		if (!device) {
+			return res.status(404).json({
+				message: `Device with ID ${deviceId} not found or access denied`,
+			});
+		}
+
+		let deviceStatus = device.status;
+		let deviceTimestamp = device.last_heartbeat;
+
+		if (updates.updateStatus != undefined || updates.updateStatus != null) {
+			deviceStatus = updates.updateStatus;
+		}
+
+		if (
+			updates.updateTimestamp != undefined ||
+			updates.updateTimestamp != null
+		) {
+			deviceTimestamp = updates.updateTimestamp;
+		}
+
+		const updatedDevice = await updateDevice({
+			deviceId,
+			userRole,
+			userId,
+			deviceStatus,
+			deviceTimestamp,
+		});
+		res.status(200).json({
+			message: "Device updated successfully",
+			device: updatedDevice,
+		});
+	} catch (error) {
+		console.error("Patch Device Error:", error.message);
+		res.status(500).json({
+			message: "Failed to update device due to server error.",
 		});
 	}
 });

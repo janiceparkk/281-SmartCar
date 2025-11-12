@@ -12,6 +12,7 @@ const authRouter = require("./routes/authRoutes");
 const carRouter = require("./routes/carRoutes");
 const alertRouter = require("./routes/alertRoutes");
 const deviceRouter = require("./routes/deviceRoutes");
+const serviceRequestRouter = require("./routes/serviceRequestRoutes");
 
 const app = express();
 app.use(cors());
@@ -65,6 +66,7 @@ app.use((req, res, next) => {
 app.use("/api/auth", authRouter);
 app.use("/api/cars", carRouter);
 app.use("/api/devices", deviceRouter);
+app.use("/api/serviceRequests", serviceRequestRouter);
 // app.use("/api/alerts", alertRouter);
 
 // --- WebSocket Server (For CARLA/IoT Real-Time Data Ingestion) ---
@@ -152,27 +154,6 @@ wss.on("connection", (ws, req) => {
 		}
 	});
 });
-
-// --- Real-time Broadcast Functions (For React Frontend Updates) ---
-//  Just a AI gen Place holder, will need IoT part will handle this
-/** Broadcasts updated car status to all connected WebSocket clients (dashboards). */
-function broadcastCarStatus(carData) {
-	const payload = JSON.stringify({
-		topic: "car_status_update",
-		data: {
-			car_id: carData.car_id,
-			status: carData.status,
-			lat: carData.current_latitude,
-			lon: carData.current_longitude,
-			heartbeat: carData.last_heartbeat,
-		},
-	});
-	wss.clients.forEach((client) => {
-		if (client.readyState === WebSocket.OPEN) {
-			client.send(payload);
-		}
-	});
-}
 
 /** Broadcasts a new critical alert to all connected WebSocket clients (dashboards). */
 //  Just a AI gen Place holder, will need IoT part will handle this

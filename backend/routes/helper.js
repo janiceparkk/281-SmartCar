@@ -12,7 +12,6 @@ const authMiddleware = (req, res, next) => {
 	}
 
 	const token = authHeader.replace("Bearer ", "").trim();
-	
 
 	if (!token) {
 		return res
@@ -25,8 +24,6 @@ const authMiddleware = (req, res, next) => {
 		req.user = decoded;
 		next();
 	} catch (error) {
-		console.error("[AUTH DEBUG] Token verification failed:", error.message);
-		console.error("[AUTH DEBUG] Error details:", error);
 		res.status(400).json({ message: "Invalid token." });
 	}
 };
