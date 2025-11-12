@@ -9,7 +9,7 @@ import MDButton from "components/MDButton";
 import BasicLayout from "layouts/authentication/components/BasicLayout";
 import bgImage from "assets/images/bg-sign-up-cover.jpeg";
 import SocialLoginButtons from "components/SocialLoginButtons";
-import { registerUser } from "services/authService"; 
+import { registerUser } from "services/authService";
 
 function SignUp() {
 	const [formData, setFormData] = useState({
@@ -42,7 +42,7 @@ function SignUp() {
 			const result = await registerUser(formData);
 			console.log("Registration successful:", result);
 			// Redirect to login page after successful signup
-			window.location.href ="/login";
+			window.location.href = "/login";
 		} catch (err) {
 			setError(err.message);
 		} finally {

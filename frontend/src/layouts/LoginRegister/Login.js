@@ -30,7 +30,7 @@ function Login() {
 			const res = await loginUser(form);
 			localStorage.setItem("token", res.token);
 			setMessage("✅ Login successful!");
-			window.location.href = "/dashboard"; 
+			window.location.href = "/dashboard";
 		} catch (err) {
 			setMessage(`❌ ${err.message}`);
 		}
