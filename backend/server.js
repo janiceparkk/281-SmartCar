@@ -6,6 +6,8 @@ const WebSocket = require("ws");
 const cors = require("cors");
 const mongoose = require("mongoose");
 const { Pool } = require("pg");
+const session = require("express-session");
+const passport = require("./config/passport"); // Your passport config
 
 // Import Route Modules
 const authRouter = require("./routes/authRoutes");
@@ -15,7 +17,32 @@ const deviceRouter = require("./routes/deviceRoutes");
 const serviceRequestRouter = require("./routes/serviceRequestRoutes");
 
 const app = express();
-app.use(cors());
+
+// --- Session Configuration ---
+app.use(
+	session({
+		secret: process.env.SESSION_SECRET,
+		resave: false,
+		saveUninitialized: false,
+		cookie: {
+			secure: process.env.NODE_ENV === "production",
+			maxAge: 24 * 60 * 60 * 1000, // 24 hours
+		},
+	})
+);
+
+// --- Passport Middleware ---
+app.use(passport.initialize());
+app.use(passport.session());
+
+// --- CORS Configuration ---
+app.use(
+	cors({
+		origin: process.env.FRONTEND_URL || "http://localhost:3000",
+		credentials: true,
+	})
+);
+
 app.use(express.json());
 
 const server = http.createServer(app);
@@ -33,7 +60,70 @@ if (!JWT_SECRET) {
 	process.exit(1);
 }
 
-// PostgreSQL Pool
+const jwt = require("jsonwebtoken");
+
+// --- OIDC Routes ---
+app.get("/auth/google", passport.authenticate("google"));
+
+app.get(
+	"/auth/google/callback",
+	passport.authenticate("google", {
+		session: false,
+		failureRedirect: "/login",
+	}),
+	(req, res) => {
+		// Create JWT token
+		const token = jwt.sign(
+			{
+				id: req.user.id,
+				email: req.user.email,
+				name: req.user.name,
+			},
+			process.env.JWT_SECRET,
+			{ expiresIn: "1d" } // 1 day expiry
+		);
+
+		// Redirect to frontend login page with token in URL
+		res.redirect(
+			`${process.env.FRONTEND_URL || "http://localhost:3000"}/login?token=${token}`
+		);
+	}
+);
+
+// --- Auth Check Middleware ---
+const requireAuth = (req, res, next) => {
+	if (req.isAuthenticated()) {
+		return next();
+	}
+	res.status(401).json({ error: "Not authenticated" });
+};
+
+// --- User Info Endpoint ---
+app.get("/auth/user", (req, res) => {
+	if (req.isAuthenticated()) {
+		res.json({
+			user: req.user,
+			isAuthenticated: true,
+		});
+	} else {
+		res.json({
+			user: null,
+			isAuthenticated: false,
+		});
+	}
+});
+
+// --- Logout Endpoint ---
+app.post("/auth/logout", (req, res) => {
+	req.logout((err) => {
+		if (err) {
+			return res.status(500).json({ error: "Logout failed" });
+		}
+		res.json({ message: "Logged out successfully" });
+	});
+});
+
+// PostgreSQL Pool (your existing code)
 const pgPool = new Pool({
 	user: process.env.PG_USER,
 	host: process.env.PG_HOST,
@@ -62,113 +152,23 @@ app.use((req, res, next) => {
 	next();
 });
 
-// --- Routes ---
+// --- Protected Routes ---
+app.use("/api/cars", requireAuth, carRouter);
+app.use("/api/devices", requireAuth, deviceRouter);
+app.use("/api/serviceRequests", requireAuth, serviceRequestRouter);
+
+// --- Public Routes ---
 app.use("/api/auth", authRouter);
-app.use("/api/cars", carRouter);
-app.use("/api/devices", deviceRouter);
-app.use("/api/serviceRequests", serviceRequestRouter);
-// app.use("/api/alerts", alertRouter);
 
-// --- WebSocket Server (For CARLA/IoT Real-Time Data Ingestion) ---
-//  Just a AI gen Place holder, will need IoT part will handle this
+// --- WebSocket with Authentication (Optional) ---
 wss.on("connection", (ws, req) => {
-	console.log("[WS] New CARLA Agent Connected.");
-
-	let carId = "CAR1000"; // Assuming a default car for unauthenticated agents
-	let connectedCar = null;
+	// You can add authentication to WebSocket connections here
+	console.log("[WS] New client connected");
 
 	ws.on("message", (message) => {
-		(async () => {
-			try {
-				const data = JSON.parse(message);
-
-				if (!connectedCar) {
-					connectedCar = await getSmartCarById(carId);
-					if (connectedCar) {
-						console.log(
-							`[WS] Agent identified as ${carId}. Status set to Online.`
-						);
-						ws.send(
-							JSON.stringify({
-								status: "Connected",
-								carId: carId,
-							})
-						);
-					} else {
-						console.error(
-							`[WS] Could not find registered car ${carId}. Closing connection.`
-						);
-						ws.close();
-						return;
-					}
-				}
-
-				// --- Core Logic: Process Incoming Data ---
-
-				// A. Handle Telemetry (Location/Heartbeat)
-				if (data.type === "telemetry") {
-					const updatedCar = await updateCarTelemetry(
-						carId,
-						data.lat,
-						data.lon,
-						"Online"
-					);
-
-					// Send updated status to all connected web dashboards (React)
-					broadcastCarStatus(updatedCar);
-				}
-
-				// B. Handle Audio Event Detection
-				if (data.type === "audio_event") {
-					const newAlert = await logAudioAlert({
-						carId,
-						type: data.event,
-						classification: data.classification,
-						confidence: data.confidence,
-					});
-
-					// Immediately notify frontend dashboards of the critical alert
-					broadcastAlert(newAlert);
-				}
-			} catch (error) {
-				console.error(
-					"[WS] Error processing message/DB:",
-					error.message
-				);
-			}
-		})();
-	});
-
-	ws.on("close", async () => {
-		if (connectedCar && connectedCar.car_id) {
-			await updateCarTelemetry(
-				connectedCar.car_id,
-				connectedCar.current_latitude,
-				connectedCar.current_longitude,
-				"Offline"
-			);
-			console.log(
-				`[WS] Agent ${connectedCar.car_id} disconnected. Status set to Offline.`
-			);
-			broadcastCarStatus({ ...connectedCar, status: "Offline" });
-		}
+		// Handle messages
 	});
 });
-
-/** Broadcasts a new critical alert to all connected WebSocket clients (dashboards). */
-//  Just a AI gen Place holder, will need IoT part will handle this
-
-function broadcastAlert(alertData) {
-	const payload = JSON.stringify({
-		topic: "new_alert",
-		data: alertData,
-	});
-	wss.clients.forEach((client) => {
-		if (client.readyState === WebSocket.OPEN) {
-			client.send(payload);
-		}
-	});
-}
 
 // --- Start Server ---
 server.listen(PORT, () => {
