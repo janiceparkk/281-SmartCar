@@ -50,6 +50,12 @@ pgPool
 		console.error("❌ Failed to connect to PostgreSQL:", err.message);
 	});
 
+// --- MongoDB Connection ---
+mongoose
+	.connect(MONGO_URI)
+	.then(() => console.log("✅ Connected to MongoDB successfully."))
+	.catch((err) => console.error("❌ Failed to connect to MongoDB:", err.message));
+
 // --- Database Middleware ---
 app.use((req, res, next) => {
 	req.db = {
