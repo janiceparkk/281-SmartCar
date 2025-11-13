@@ -13,14 +13,26 @@ router.post("/register", async (req, res) => {
 	try {
 		const { email, password, name, role, model } = req.body;
 
-		const newUser = await registerUser({ email, password, name, role });
+		// Hash password, get role_id, etc. inside registerUser function
+		// Here we also initialize profile_data with default values
+		const defaultProfileData = {
+			emailNotifications: true,
+			pushNotifications: true,
+			location: "",
+			picture: "",
+		};
 
+		const newUser = await registerUser({
+			email,
+			password,
+			name,
+			role,
+			profile_data: defaultProfileData, // <-- add defaults here
+		});
+
+		// If the new user is a CarOwner and has a model, register the car
 		if (newUser.role === "CarOwner" && model) {
-			await registerSmartCar(
-				{ model: model },
-				newUser.role,
-				newUser.user_id
-			);
+			await registerSmartCar({ model }, newUser.role, newUser.user_id);
 		}
 
 		res.status(201).json({
@@ -30,6 +42,7 @@ router.post("/register", async (req, res) => {
 				name: newUser.name,
 				email: newUser.email,
 				role: newUser.role,
+				profile_data: defaultProfileData, // include it in response
 			},
 		});
 	} catch (error) {
@@ -42,6 +55,7 @@ router.post("/register", async (req, res) => {
 	}
 });
 
+
 router.post("/login", async (req, res) => {
 	try {
 		const { email, password } = req.body;
@@ -53,7 +67,11 @@ router.post("/login", async (req, res) => {
 		}
 
 		const token = jwt.sign(
-			{ id: user.user_id, role: user.role_name },
+			{
+				id: user.user_id,
+				role: user.role_name,
+				email: user.email, 
+			},
 			req.db.JWT_SECRET,
 			{ expiresIn: "1h" }
 		);
@@ -79,6 +97,7 @@ router.post("/login", async (req, res) => {
 				name: user.name,
 				email: user.email,
 				role: user.role_name,
+				profile_data: user.profile_data || {}, 
 			},
 			cars: userCars,
 		});
