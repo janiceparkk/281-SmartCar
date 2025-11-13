@@ -35,11 +35,12 @@ CREATE TABLE IF NOT EXISTS users (
     user_type VARCHAR(50),
     name VARCHAR(100),  
     email VARCHAR(255) NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
+    password_hash TEXT,
     phone VARCHAR(50),
     company_name VARCHAR(100),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    last_login TIMESTAMP WITH TIME ZONE
+    last_login TIMESTAMP WITH TIME ZONE,
+    profile_data JSONB DEFAULT '{}'
 );
 
 -- 3. smart_cars Table

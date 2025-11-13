@@ -15,6 +15,7 @@ const carRouter = require("./routes/carRoutes");
 const alertRouter = require("./routes/alertRoutes");
 const deviceRouter = require("./routes/deviceRoutes");
 const serviceRequestRouter = require("./routes/serviceRequestRoutes");
+const userRoutes = require("./routes/userRoutes");
 
 const app = express();
 
@@ -72,7 +73,6 @@ app.get(
 		failureRedirect: "/login",
 	}),
 	(req, res) => {
-		// Create JWT token
 		const token = jwt.sign(
 			{
 				id: req.user.id,
@@ -80,22 +80,35 @@ app.get(
 				name: req.user.name,
 			},
 			process.env.JWT_SECRET,
-			{ expiresIn: "1d" } // 1 day expiry
+			{ expiresIn: "1d" }
 		);
 
-		// Redirect to frontend login page with token in URL
 		res.redirect(
 			`${process.env.FRONTEND_URL || "http://localhost:3000"}/login?token=${token}`
 		);
 	}
 );
 
+
 // --- Auth Check Middleware ---
-const requireAuth = (req, res, next) => {
-	if (req.isAuthenticated()) {
-		return next();
+const requireJWTAuth = (req, res, next) => {
+	const authHeader = req.headers.authorization;
+	if (!authHeader) {
+		return res.status(401).json({ error: "No token provided" });
 	}
-	res.status(401).json({ error: "Not authenticated" });
+
+	const token = authHeader.split(" ")[1];
+	if (!token) {
+		return res.status(401).json({ error: "Invalid token format" });
+	}
+
+	try {
+		const decoded = jwt.verify(token, process.env.JWT_SECRET);
+		req.user = decoded; // e.g. { id, role }
+		next();
+	} catch (err) {
+		return res.status(403).json({ error: "Invalid or expired token" });
+	}
 };
 
 // --- User Info Endpoint ---
@@ -142,6 +155,17 @@ pgPool
 		console.error("❌ Failed to connect to PostgreSQL:", err.message);
 	});
 
+mongoose
+	.connect(MONGO_URI, {
+		useNewUrlParser: true,
+		useUnifiedTopology: true,
+	})
+	.then(() => console.log("✅ Connected to MongoDB successfully"))
+	.catch((err) => {
+		console.error("❌ Failed to connect to MongoDB:", err.message);
+		process.exit(1);
+	});
+
 // --- Database Middleware ---
 app.use((req, res, next) => {
 	req.db = {
@@ -153,9 +177,10 @@ app.use((req, res, next) => {
 });
 
 // --- Protected Routes ---
-app.use("/api/cars", requireAuth, carRouter);
-app.use("/api/devices", requireAuth, deviceRouter);
-app.use("/api/serviceRequests", requireAuth, serviceRequestRouter);
+app.use("/api/cars", requireJWTAuth, carRouter);
+app.use("/api/devices", requireJWTAuth, deviceRouter);
+app.use("/api/serviceRequests", requireJWTAuth, serviceRequestRouter);
+app.use("/api/user", requireJWTAuth, userRoutes);
 
 // --- Public Routes ---
 app.use("/api/auth", authRouter);

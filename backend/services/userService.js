@@ -12,37 +12,31 @@ async function registerUser({
 	company_name,
 }) {
 	try {
-		// Check if user already exists in PostgreSQL
+		// Check if user exists
 		const existingUser = await pgPool.query(
 			"SELECT user_id FROM users WHERE email = $1",
 			[email]
 		);
+		if (existingUser.rows.length > 0) return existingUser.rows[0];
 
-		if (existingUser.rows.length > 0) {
-			throw new Error("User with this email already exists.");
-		}
-
-		// Get role_id
 		const roleResult = await pgPool.query(
 			"SELECT role_id FROM user_roles WHERE role_name = $1",
 			[role]
 		);
-
-		if (roleResult.rows.length === 0) {
+		if (roleResult.rows.length === 0)
 			throw new Error(`Role ${role} not found`);
-		}
-
 		const roleId = roleResult.rows[0].role_id;
 
-		// Hash password
-		const saltRounds = 10;
-		const passwordHash = await bcrypt.hash(password, saltRounds);
+		let passwordHash = null;
+		if (password) {
+			const saltRounds = 10;
+			passwordHash = await bcrypt.hash(password, saltRounds);
+		}
 
-		// Insert user into PostgreSQL
 		const userResult = await pgPool.query(
 			`INSERT INTO users (role_id, user_type, name, email, password_hash, phone, company_name, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-             RETURNING user_id, name, email, role_id, created_at`,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+       RETURNING user_id, name, email, role_id, created_at`,
 			[
 				roleId,
 				user_type,
@@ -55,18 +49,14 @@ async function registerUser({
 			]
 		);
 
-		// Get role name for response
-		const userWithRole = {
-			...userResult.rows[0],
-			role: role, // Include role in response
-		};
-
-		return userWithRole;
+		return { ...userResult.rows[0], role };
 	} catch (error) {
 		console.error("Error in registerUser:", error.message);
 		throw error;
 	}
 }
+
+
 
 /** Authenticates user against PostgreSQL */
 async function authenticateUser(email, password) {
