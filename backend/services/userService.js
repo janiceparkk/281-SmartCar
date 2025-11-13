@@ -12,7 +12,6 @@ async function registerUser({
 	company_name,
 }) {
 	try {
-
 		// Check if user already exists in PostgreSQL
 		const existingUser = await pgPool.query(
 			"SELECT user_id FROM users WHERE email = $1",
@@ -56,7 +55,6 @@ async function registerUser({
 			]
 		);
 
-		
 		// Get role name for response
 		const userWithRole = {
 			...userResult.rows[0],
@@ -73,7 +71,6 @@ async function registerUser({
 /** Authenticates user against PostgreSQL */
 async function authenticateUser(email, password) {
 	try {
-
 		const userResult = await pgPool.query(
 			`SELECT u.user_id, u.name, u.email, u.password_hash, u.role_id, r.role_name
              FROM users u
@@ -81,7 +78,6 @@ async function authenticateUser(email, password) {
              WHERE u.email = $1`,
 			[email]
 		);
-
 
 		if (userResult.rows.length === 0) {
 			return null;
@@ -107,7 +103,6 @@ async function authenticateUser(email, password) {
 
 		// Remove password hash from returned user object
 		const { password_hash, ...userWithoutPassword } = user;
-		
 
 		return userWithoutPassword;
 	} catch (error) {

@@ -54,6 +54,12 @@ import {
 } from "context";
 
 function DashboardNavbar({ absolute, light, isMini }) {
+
+	const handleLogout = () => {
+		localStorage.removeItem("token"); 
+		
+		window.location.href = "/login"; 
+	};
 	const [navbarType, setNavbarType] = useState();
 	const [controller, dispatch] = useMaterialUIController();
 	const {
@@ -214,6 +220,16 @@ function DashboardNavbar({ absolute, light, isMini }) {
 							>
 								<Icon sx={iconsStyle}>notifications</Icon>
 							</IconButton>
+							<IconButton
+								size="small"
+								disableRipple
+								color="inherit"
+								sx={navbarIconButton}
+								onClick={handleLogout}
+							>
+								<Icon sx={iconsStyle}>logout</Icon>
+							</IconButton>
+
 							{renderMenu()}
 						</MDBox>
 					</MDBox>

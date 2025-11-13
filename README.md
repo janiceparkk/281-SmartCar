@@ -39,4 +39,4 @@ Install dependencies first.
 ### Frontend
 
 `cd frontend`
-`npm run dev`
+`npm run start`

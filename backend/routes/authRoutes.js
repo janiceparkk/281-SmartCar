@@ -18,8 +18,8 @@ router.post("/register", async (req, res) => {
 		if (newUser.role === "CarOwner" && model) {
 			await registerSmartCar(
 				{ model: model },
-				newUser.role, 
-				newUser.user_id 
+				newUser.role,
+				newUser.user_id
 			);
 		}
 
@@ -47,19 +47,16 @@ router.post("/login", async (req, res) => {
 		const { email, password } = req.body;
 
 		const user = await authenticateUser(email, password);
-		
 
 		if (!user) {
 			return res.status(401).json({ message: "Invalid credentials." });
 		}
-
 
 		const token = jwt.sign(
 			{ id: user.user_id, role: user.role_name },
 			req.db.JWT_SECRET,
 			{ expiresIn: "1h" }
 		);
-
 
 		// Fetch cars using pgPool from req.db
 		let userCars = [];
@@ -74,7 +71,6 @@ router.post("/login", async (req, res) => {
 				console.error("Error fetching user's cars:", carError.message);
 			}
 		}
-
 
 		return res.json({
 			token,
@@ -95,5 +91,4 @@ router.post("/login", async (req, res) => {
 	}
 });
 
-
-module.exports = router; 
+module.exports = router;
