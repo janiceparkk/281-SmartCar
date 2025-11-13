@@ -17,6 +17,7 @@ dist-ssr
 !.vscode/extensions.json
 .idea
 .DS_Store
+build/*
 *.suo
 *.ntvs*
 *.njsproj
@@ -24,3 +25,4 @@ dist-ssr
 *.sw?
 
 package-lock.json
+

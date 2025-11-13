@@ -65,7 +65,9 @@ async function registerDevice(data) {
 		// Generate MQTT credentials using the auto-generated device_id
 		const mqttCredentials = generateMQTTCredentials(deviceId);
 
-		console.log(`[Device Manager] Registered device: ${deviceId} for car: ${carId}`);
+		console.log(
+			`[Device Manager] Registered device: ${deviceId} for car: ${carId}`
+		);
 
 		return {
 			device: registeredDevice,
@@ -163,11 +165,53 @@ async function getDevices(params) {
 
 		const result = await pgPool.query(query, queryParams);
 
-		console.log(`[Device Manager] Retrieved ${result.rows.length} devices for ${userRole}`);
+		console.log(
+			`[Device Manager] Retrieved ${result.rows.length} devices for ${userRole}`
+		);
 
 		return result.rows;
 	} catch (error) {
 		console.error("Error in getDevices:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Get active devices for admins
+ * @returns {Array} - List of devices
+ */
+async function getActiveDevices() {
+	try {
+		let params = ["active"];
+		let query = `
+			SELECT
+				d.device_id,
+				d.car_id,
+				d.device_type,
+				d.status,
+				d.last_heartbeat,
+				d.current_firmware_id,
+				d.certificate_issuer,
+				d.certificate_expiry,
+				d.last_firmware_update,
+				c.model as car_model,
+				c.user_id as car_owner_id,
+				f.version as firmware_version
+			FROM iot_devices d
+			LEFT JOIN smart_cars c ON d.car_id = c.car_id
+			LEFT JOIN device_firmware f ON d.current_firmware_id = f.firmware_id
+			WHERE 1=1 AND d.status = $1
+			ORDER BY d.device_id DESC
+		`;
+
+		const result = await pgPool.query(query, params);
+		console.log(
+			`[Device Manager] Retrieved ${result.rows.length} active devices`
+		);
+
+		return result.rows;
+	} catch (error) {
+		console.error("Error in getActiveDevices:", error.message);
 		throw error;
 	}
 }
@@ -221,7 +265,9 @@ async function getDeviceById(params) {
 			return null;
 		}
 
-		console.log(`[Device Manager] Retrieved device ${deviceId} for ${userRole}`);
+		console.log(
+			`[Device Manager] Retrieved device ${deviceId} for ${userRole}`
+		);
 
 		return result.rows[0];
 	} catch (error) {
@@ -230,8 +276,58 @@ async function getDeviceById(params) {
 	}
 }
 
+/**
+ * Updates device by ID with role-based access control
+ * @param {Object} params - Query parameters
+ * @returns {Object|null} - Device object or null
+ */
+async function updateDevice(params) {
+	const { deviceId, userRole, userId, deviceStatus, deviceTimestamp } =
+		params;
+
+	try {
+		const query = `
+			UPDATE iot_devices AS d
+			SET status = $1,
+				last_heartbeat = COALESCE($2, NOW())
+			WHERE d.device_id = $3
+		`;
+		const params = [deviceStatus, deviceTimestamp ?? null, deviceId];
+
+		let sql = query;
+		const args = [...params];
+		if (userRole === "CarOwner") {
+			sql += `
+			AND EXISTS (
+				SELECT 1
+				FROM smart_cars c
+				WHERE c.car_id = d.car_id
+				AND c.user_id = $4
+			)
+			`;
+			args.push(userId);
+		}
+		sql += ` RETURNING *;`;
+
+		const result = await pgPool.query(sql, args);
+		if (result.rows.length === 0) {
+			return null;
+		}
+
+		console.log(
+			`[Device Manager] Updated device ${deviceId} for ${userRole}`
+		);
+		return result.rows[0];
+	} catch (error) {
+		console.error("Error in updateDevice:", error.message);
+		throw error;
+	}
+}
+
 module.exports = {
 	registerDevice,
 	getDevices,
+	getActiveDevices,
 	getDeviceById,
+	updateDevice,
 };

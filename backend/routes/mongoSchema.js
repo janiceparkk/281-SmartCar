@@ -41,10 +41,10 @@ const AlertSchema = new mongoose.Schema(
 		location: {
 			latitude: Number,
 			longitude: Number,
-			accuracy: Number, 
+			accuracy: Number,
 		},
 		audio_context: {
-			duration: Number, 
+			duration: Number,
 			decibel_level: Number,
 			frequency_range: [Number],
 			timestamp: Date,
@@ -56,7 +56,7 @@ const AlertSchema = new mongoose.Schema(
 			index: true,
 		},
 		assigned_to: {
-			type: String, 
+			type: String,
 			required: false,
 		},
 		resolution_notes: {
@@ -96,7 +96,6 @@ AlertSchema.statics.getActiveAlertsByCar = function (carId) {
 	}).sort({ createdAt: -1 });
 };
 
-
 const Alert = mongoose.model("Alert", AlertSchema);
 
 const AudioStreamSchema = new mongoose.Schema(
@@ -107,17 +106,17 @@ const AudioStreamSchema = new mongoose.Schema(
 			index: true,
 		},
 		raw_audio_data: {
-			type: Buffer, 
-			required: false, 
+			type: Buffer,
+			required: false,
 		},
 		audio_file_path: {
-			type: String, 
+			type: String,
 			required: false,
 		},
 		audio_features: [
 			{
-				feature_type: String, 
-				values: [Number], 
+				feature_type: String,
+				values: [Number],
 				timestamp: Date,
 			},
 		],
@@ -131,14 +130,14 @@ const AudioStreamSchema = new mongoose.Schema(
 			{
 				segment_start: Date,
 				segment_end: Date,
-				segment_duration: Number, 
+				segment_duration: Number,
 			},
 		],
 		metadata: {
 			sample_rate: Number,
 			bit_depth: Number,
 			channels: Number,
-			duration: Number, 
+			duration: Number,
 			file_format: String,
 			file_size: Number,
 		},
@@ -149,7 +148,7 @@ const AudioStreamSchema = new mongoose.Schema(
 		},
 	},
 	{
-		timestamps: true, 
+		timestamps: true,
 	}
 );
 
@@ -190,7 +189,7 @@ const RealTimeAnalyticsSchema = new mongoose.Schema(
 					scream: Number,
 					other: Number,
 				},
-				audio_processing_volume: Number, 
+				audio_processing_volume: Number,
 				average_confidence: Number,
 				uptime_percentage: Number,
 			},
@@ -207,33 +206,33 @@ const RealTimeAnalyticsSchema = new mongoose.Schema(
 				},
 			],
 			temporal_patterns: {
-				peak_hours: [Number], 
+				peak_hours: [Number],
 				weekly_trends: [Number],
 			},
 			correlation_analysis: {
-				weather_impact: Map, 
-				time_of_day_impact: Map, 
+				weather_impact: Map,
+				time_of_day_impact: Map,
 			},
 		},
 		system_performance: {
-			total_audio_processed: Number, 
-			average_processing_latency: Number, 
-			model_accuracy: Number, 
-			system_uptime: Number, 
+			total_audio_processed: Number,
+			average_processing_latency: Number,
+			model_accuracy: Number,
+			system_uptime: Number,
 			active_cars: Number,
 			storage_usage: {
-				audio_data: Number, 
-				analytics_data: Number, 
-				total: Number, 
+				audio_data: Number,
+				analytics_data: Number,
+				total: Number,
 			},
 		},
 		aggregated_data: {
 			total_alerts: Number,
-			alerts_by_type: Map, 
+			alerts_by_type: Map,
 			average_confidence_score: Number,
 			most_common_sound: String,
-			geographic_coverage: Number, 
-			data_throughput: Number, 
+			geographic_coverage: Number,
+			data_throughput: Number,
 		},
 	},
 	{
@@ -265,7 +264,6 @@ const RealTimeAnalytics = mongoose.model(
 	"RealTimeAnalytics",
 	RealTimeAnalyticsSchema
 );
-
 
 const SystemLogSchema = new mongoose.Schema(
 	{
@@ -382,5 +380,8 @@ SystemLogSchema.statics.getComponentStats = function (hours = 1) {
 const SystemLog = mongoose.model("SystemLog", SystemLogSchema);
 
 module.exports = {
-	Alert,AudioStream,RealTimeAnalytics, SystemLog
+	Alert,
+	AudioStream,
+	RealTimeAnalytics,
+	SystemLog,
 };
