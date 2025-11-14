@@ -12,7 +12,14 @@ const {
 router.post("/register", async (req, res) => {
 	try {
 		const { email, password, name, role, model } = req.body;
+		const existing = await req.db.pgPool.query(
+			"SELECT user_id FROM users WHERE email=$1",
+			[email]
+		);
 
+		if (existing.rows.length > 0) {
+			return res.status(400).json({ message: "User already exists." });
+		}
 		// Hash password, get role_id, etc. inside registerUser function
 		// Here we also initialize profile_data with default values
 		const defaultProfileData = {
@@ -55,7 +62,6 @@ router.post("/register", async (req, res) => {
 	}
 });
 
-
 router.post("/login", async (req, res) => {
 	try {
 		const { email, password } = req.body;
@@ -70,7 +76,7 @@ router.post("/login", async (req, res) => {
 			{
 				id: user.user_id,
 				role: user.role_name,
-				email: user.email, 
+				email: user.email,
 			},
 			req.db.JWT_SECRET,
 			{ expiresIn: "1h" }
@@ -97,7 +103,7 @@ router.post("/login", async (req, res) => {
 				name: user.name,
 				email: user.email,
 				role: user.role_name,
-				profile_data: user.profile_data || {}, 
+				profile_data: user.profile_data || {},
 			},
 			cars: userCars,
 		});
