@@ -52,6 +52,12 @@ pgPool
 		console.error("❌ Failed to connect to PostgreSQL:", err.message);
 	});
 
+// --- MongoDB Connection ---
+mongoose
+	.connect(MONGO_URI)
+	.then(() => console.log("✅ Connected to MongoDB successfully."))
+	.catch((err) => console.error("❌ Failed to connect to MongoDB:", err.message));
+
 // --- Database Middleware ---
 app.use((req, res, next) => {
 	req.db = {
@@ -65,9 +71,11 @@ app.use((req, res, next) => {
 // --- Routes ---
 app.use("/api/auth", authRouter);
 app.use("/api/cars", carRouter);
+
 app.use("/api/devices", deviceRouter);
 app.use("/api/serviceRequests", serviceRequestRouter);
-// app.use("/api/alerts", alertRouter);
+app.use("/api/alerts", alertRouter);
+
 
 // --- WebSocket Server (For CARLA/IoT Real-Time Data Ingestion) ---
 //  Just a AI gen Place holder, will need IoT part will handle this
