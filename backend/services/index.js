@@ -24,10 +24,4 @@ module.exports = {
 	// User services
 	registerUser,
 	authenticateUser,
-
-	// Alert services
-	logAudioAlert,
-	acknowledgeAlert,
-	closeAlert,
-	createTestAlert,
 };

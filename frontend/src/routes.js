@@ -1,10 +1,10 @@
-import { useEffect } from "react";
 import axios from "axios";
 import Dashboard from "layouts/dashboard";
 
 import SignUp from "layouts/LoginRegister/SignUp";
 import Login from "layouts/LoginRegister/Login";
 import UserProfile from "layouts/UserProfile";
+import AlertDetails from "layouts/dashboard/components/AlertLogs/alertDetails";
 import LogDetails from "layouts/dashboard/components/ServiceLogs/logDetails";
 
 // IoT Device Management Layouts
@@ -79,6 +79,22 @@ export const getRoutes = () => {
 		}
 	}
 
+	async function fetchActiveAlerts() {
+		try {
+			const token = localStorage.getItem("token");
+			const res = await axios.get(
+				"http://localhost:5000/api/alerts?status=Active",
+				{
+					headers: { Authorization: `Bearer ${token}` },
+				}
+			);
+
+			return res;
+		} catch (error) {
+			return false;
+		}
+	}
+
 	async function fetchActiveDevices() {
 		try {
 			const token = localStorage.getItem("token");
@@ -126,6 +142,7 @@ export const getRoutes = () => {
 					component={
 						<Dashboard
 							fetchActiveCars={fetchActiveCars}
+							fetchActiveAlerts={fetchActiveAlerts}
 							fetchActiveRequests={fetchActiveRequests}
 							fetchActiveDevices={fetchActiveDevices}
 						/>
@@ -142,6 +159,12 @@ export const getRoutes = () => {
 		},
 
 		// IoT Device Management (protected)
+		{
+			key: "alert-details",
+			route: "/alerts/:alertId",
+			component: <ProtectedComponent component={<AlertDetails />} />,
+			protected: true,
+		},
 		{
 			type: "collapse",
 			name: "IoT Devices",
