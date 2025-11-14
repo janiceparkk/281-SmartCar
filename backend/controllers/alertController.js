@@ -65,24 +65,54 @@ async function closeAlert(alertId) {
 	}
 }
 
+// Define a default object to maintain old behavior if no data is passed
+const defaultTestAlertData = {
+	carId: "CAR-TEST-001",
+	type: "siren",
+	classification: "EmergencyVehicleSiren",
+	confidence: 0.95,
+};
+
 /**
  * Creates a test alert for administrative purposes.
+ * @param {object} alertData - The data for the test alert.
  * @returns {Promise<object>} The newly created test alert object.
  */
-async function createTestAlert() {
+async function createTestAlert(alertData = defaultTestAlertData) {
 	try {
-		const testAlertData = {
-			carId: "CAR-TEST-001",
-			type: "siren",
-			classification: "EmergencyVehicleSiren",
-			confidence: 0.95,
-		};
-		// Directly call the existing log function to ensure alert_id generation is consistent
-		const newAlert = await logAudioAlert(testAlertData);
+		// Use the provided alertData instead of a hardcoded object
+		const newAlert = await logAudioAlert(alertData);
 		console.log(`[DB] Created a new test alert: ${newAlert.alert_id}`);
 		return newAlert;
 	} catch (error) {
 		console.error("[DB] Failed to create a test alert:", error);
+		throw error;
+	}
+}
+
+/**
+ * Retrieves a list of alerts, with optional filtering.
+ * @param {object} queryParams - The query parameters from the request (e.g., for filtering).
+ * @returns {Promise<Array>} A list of alert objects.
+ */
+async function getAlerts(queryParams = {}) {
+	try {
+		const filter = {};
+		// Build filter object based on provided query parameters
+		if (queryParams.status) {
+			filter.status = queryParams.status;
+		}
+		if (queryParams.car_id) {
+			filter.car_id = queryParams.car_id;
+		}
+		if (queryParams.alert_type) {
+			filter.alert_type = queryParams.alert_type;
+		}
+
+		const alerts = await Alert.find(filter).sort({ createdAt: -1 });
+		return alerts;
+	} catch (error) {
+		console.error("[DB] Failed to get alerts:", error);
 		throw error;
 	}
 }
@@ -92,4 +122,5 @@ module.exports = {
 	acknowledgeAlert,
 	closeAlert,
 	createTestAlert,
+    getAlerts,
 };

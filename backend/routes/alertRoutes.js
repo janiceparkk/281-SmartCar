@@ -6,7 +6,8 @@ const {
 	acknowledgeAlert,
 	closeAlert,
 	createTestAlert,
-} = require("../services");
+    getAlerts
+} = require("../controllers/alertController");
 
 router.use(authMiddleware);
 
@@ -58,11 +59,10 @@ router.post("/:alertId/close", async (req, res) => {
 
 /**
  * @route   POST /api/alerts/test
- * @desc    Create a test alert (Admin only)
+ * @desc    Create a test alert (Admin only). Accepts a JSON body to override default test data.
  * @access  Private (Admin)
  */
 router.post("/test", async (req, res) => {
-	// Role-based access control
 	if (req.user.role !== "Admin") {
 		return res.status(403).json({
 			message: "Forbidden: You do not have permission to create test alerts.",
@@ -70,11 +70,28 @@ router.post("/test", async (req, res) => {
 	}
 
 	try {
-		const newAlert = await createTestAlert();
+        // Pass the request body to the controller. If body is empty, the controller will use its default.
+		const newAlert = await createTestAlert(req.body); 
 		res.status(201).json(newAlert);
-	} catch (error) {
+	} catch (error)
+    {
 		console.error("Error creating test alert:", error);
 		res.status(500).json({ message: "Server error while creating a test alert." });
+	}
+});
+
+/**
+ * @route   GET /api/alerts
+ * @desc    Get all alerts, with optional filtering by query params (status, car_id, alert_type)
+ * @access  Private
+ */
+router.get("/", async (req, res) => {
+	try {
+		const alerts = await getAlerts(req.query);
+		res.json(alerts);
+	} catch (error) {
+		console.error("Error getting alerts:", error);
+		res.status(500).json({ message: "Server error while getting alerts." });
 	}
 });
 
