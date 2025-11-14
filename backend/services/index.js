@@ -7,13 +7,6 @@ const {
 
 const { registerUser, authenticateUser } = require("./userService");
 
-const {
-	logAudioAlert,
-	acknowledgeAlert,
-	closeAlert,
-	createTestAlert,
-} = require("./alertService");
-
 module.exports = {
 	// Car services
 	registerSmartCar,
@@ -24,10 +17,4 @@ module.exports = {
 	// User services
 	registerUser,
 	authenticateUser,
-
-	// Alert services
-	logAudioAlert,
-	acknowledgeAlert,
-	closeAlert,
-	createTestAlert,
 };

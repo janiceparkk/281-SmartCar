@@ -9,47 +9,53 @@ import MDButton from "components/MDButton";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 
-export default function LogDetails() {
+export default function AlertDetails() {
 	const location = useLocation();
-	const [log, setLog] = useState(location.state?.log);
+	const [alertItem, setAlertItem] = useState(location.state?.alert);
 	const [resolving, setResolving] = useState(false);
 
 	const handleResolve = async () => {
-		if (!log) return;
+		if (!alertItem) return;
 		try {
 			setResolving(true);
 			const token = localStorage.getItem("token");
 			const updatedStatus =
-				log.status === "In Progress" ? "Resolved" : "In Progress";
-			const updatedLog = await axios.patch(
-				`http://localhost:5000/api/serviceRequests/${log.request_id}`,
-				{ carId: log.car_id, status: updatedStatus },
+				alertItem.status === "Active" ||
+				alertItem.status === "Acknowledged"
+					? "Resolved"
+					: "Acknowledged";
+			const reqParam = updatedStatus === "Resolved" ? "close" : "ack";
+
+			const updatedAlert = await axios.post(
+				`http://localhost:5000/api/alerts/${alertItem.alert_id}/${reqParam}`,
+				null,
 				{
 					headers: {
 						Authorization: `Bearer ${token}`,
 					},
 				}
 			);
-			if (updatedLog) {
-				setLog((prev) => ({ ...prev, ...updatedLog.data }));
+			if (updatedAlert) {
+				setAlertItem((prev) => ({ ...prev, ...updatedAlert.data }));
 			}
-			alert("Updated Service Request Status");
+			alert("Updated Alert Status");
 		} catch (error) {
 			console.error("Failed to update status:", error);
-			alert("Error resolving service request.");
+			alert("Error resolving alert.");
 		} finally {
 			setResolving(false);
 		}
 	};
 
-	if (!log) {
+	if (!alertItem) {
 		return (
 			<DashboardLayout>
 				<DashboardNavbar />
 				<Card>
 					<MDBox p={3}>
 						<MDTypography color="error">
-							No log data passed. Try returning to the Dashboard.
+							No alert data passed. Try returning to the
+							Dashboard.
 						</MDTypography>
 						<MDButton
 							component={RouterLink}
@@ -72,46 +78,94 @@ export default function LogDetails() {
 			<Card>
 				<MDBox p={3}>
 					<MDTypography variant="h6" fontWeight="medium">
-						Log Details
+						Alert Details
 					</MDTypography>
 
 					<MDBox lineHeight={2} mt={2}>
 						<MDTypography variant="button">
-							Log ID: {log.log_id}
+							Alert ID: {alertItem.alert_id}
 						</MDTypography>
 						<br />
 						<MDTypography variant="button">
-							Request ID: {log.request_id}
+							Car ID: {alertItem.car_id}
 						</MDTypography>
 						<br />
 						<MDTypography variant="button">
-							Car ID: {log.car_id}
+							Alert Type: {alertItem.alert_type}
 						</MDTypography>
 						<br />
 						<MDTypography variant="button">
-							Issue: {log.issue_label}
+							Sound Classification:{" "}
+							{alertItem?.sound_classification ?? "Not Available"}
 						</MDTypography>
 						<br />
 						<MDTypography variant="button">
-							Priority: {log.issue_priority}
+							Confidence Score: {alertItem.confidence_score}
 						</MDTypography>
 						<br />
 						<MDTypography variant="button">
-							Status: {log.status}
+							Status: {alertItem.status}
+						</MDTypography>
+						<br />
+						<MDTypography variant="button">
+							Audio Duration:{" "}
+							{alertItem?.audio_context?.duration ??
+								"Not Available"}
+						</MDTypography>
+						<br />
+						<MDTypography variant="button">
+							Audio Decibel Level:{" "}
+							{alertItem?.audio_context?.decibel_level ??
+								"Not Available"}
+						</MDTypography>
+						<br />
+						<MDTypography variant="button">
+							Audio frequency_range:{" "}
+							{alertItem?.audio_context?.frequency_range ??
+								"Not Available"}
+						</MDTypography>
+						<br />
+						<MDTypography variant="button">
+							Latitude:{" "}
+							{alertItem?.location?.latitude ?? "Not Available"}
+						</MDTypography>
+						<br />
+						<MDTypography variant="button">
+							Longitude:{" "}
+							{alertItem?.location?.longitude ?? "Not Available"}
+						</MDTypography>
+						<br />
+						<MDTypography variant="button">
+							Location Accuracy:{" "}
+							{alertItem?.location?.accuracy ?? "Not Available"}
+						</MDTypography>
+						<br />
+						<MDTypography variant="button">
+							Assigned to:{" "}
+							{alertItem?.assigned_to ?? "Unassigned"}
+						</MDTypography>
+						<br />
+						<MDTypography variant="button">
+							Resolved at:{" "}
+							{alertItem?.resolved_at ?? "Unresolved"}
 						</MDTypography>
 						<br />
 						<MDTypography variant="button">
 							Timestamp:{" "}
-							{log.log_timestamp
-								? new Date(log.log_timestamp).toLocaleString()
+							{alertItem?.audio_context?.timestamp
+								? new Date(
+										alertItem.audio_context.timestamp
+								  ).toLocaleString()
 								: "—"}
 						</MDTypography>
 						<br />
 						<MDTypography variant="button">
-							Description: {log.log_description}
+							Resolution Notes:{" "}
+							{alertItem?.resolution_notes ?? "Not Available"}
 						</MDTypography>
 					</MDBox>
-					{log.status === "In Progress" ? (
+					{alertItem.status === "Active" ||
+					alertItem.status === "Acknowledged" ? (
 						<MDButton
 							variant="outlined"
 							size="medium"
@@ -126,9 +180,7 @@ export default function LogDetails() {
 							onClick={handleResolve}
 							disabled={resolving}
 						>
-							{resolving
-								? "Resolving..."
-								: "Resolve Service Request"}
+							{resolving ? "Resolving..." : "Resolve Alert"}
 						</MDButton>
 					) : (
 						<MDButton
@@ -145,9 +197,7 @@ export default function LogDetails() {
 							onClick={handleResolve}
 							disabled={resolving}
 						>
-							{resolving
-								? "Reopening..."
-								: "Reopen Service Request"}
+							{resolving ? "Reopening..." : "Reopen Alert"}
 						</MDButton>
 					)}
 				</MDBox>

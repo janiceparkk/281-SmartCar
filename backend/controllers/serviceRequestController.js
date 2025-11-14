@@ -126,7 +126,57 @@ async function getServiceRequests(params) {
 	}
 }
 
+/**
+ * Patch Service Request
+ * @param {Object} params - Query parameters
+ * @returns {Object} - Updated Service Request
+ */
+async function patchServiceRequest(params) {
+	const { requestId, carId, status } = params;
+	try {
+		const queryParams = [status, requestId, carId];
+		const query = `WITH updated AS (
+			UPDATE service_requests sr
+			   SET status = CAST($1 AS varchar),
+				   	resolved_at = CASE
+						WHEN CAST($1 AS varchar) = 'Resolved' THEN NOW()
+					 	WHEN CAST($1 AS varchar) = 'In Progress' THEN NULL
+					 	ELSE sr.resolved_at
+				   	END
+			 	WHERE sr.request_id = $2
+			   	AND sr.car_id     = $3
+			RETURNING sr.*
+		  )
+		  SELECT u.*,
+				 it.issue_label,
+				 it.issue_priority,
+				 lg.log_id,
+				 lg.description AS log_description,
+				 lg.timestamp   AS log_timestamp
+			FROM updated u
+			JOIN issue_types it
+			  ON it.issue_id = u.issue_id
+			LEFT JOIN LATERAL (
+				  SELECT sl.log_id, sl.description, sl.timestamp
+					FROM service_logs sl
+				   WHERE sl.request_id = u.request_id
+				   ORDER BY sl.timestamp DESC
+				   LIMIT 1
+			) lg ON TRUE`;
+
+		const result = await pgPool.query(query, queryParams);
+		console.log(
+			`[Service Request Manager] Updated Service Request and Log: ${requestId} for car: ${carId}`
+		);
+		return result.rows[0];
+	} catch (error) {
+		console.error("Error in patchServiceRequest:", error.message);
+		throw error;
+	}
+}
+
 module.exports = {
 	getServiceRequests,
 	postServiceRequest,
+	patchServiceRequest,
 };
