@@ -26,6 +26,7 @@ const AlertSchema = new mongoose.Schema(
 				"tire_skid",
 				"engine_trouble",
 				"brake_squeal",
+				"traffic",
 				"other",
 			],
 		},
