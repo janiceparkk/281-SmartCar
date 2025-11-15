@@ -56,7 +56,8 @@ export const getRoutes = () => {
 
 			return res;
 		} catch (error) {
-			return false;
+			console.error("Error fetching active devices:", error);
+			return { data: { count: 0 } };
 		}
 	}
 
@@ -72,7 +73,8 @@ export const getRoutes = () => {
 
 			return res;
 		} catch (error) {
-			return false;
+			console.error("Error fetching active requests:", error);
+			return { data: { count: 0 } };
 		}
 	}
 

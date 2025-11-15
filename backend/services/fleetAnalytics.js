@@ -11,9 +11,9 @@ async function getFleetHealth(userId, userRole) {
 		let query = `
 			SELECT
 				COUNT(*) as total_devices,
-				COUNT(CASE WHEN d.status = 'online' THEN 1 END) as online_devices,
-				COUNT(CASE WHEN d.status = 'offline' THEN 1 END) as offline_devices,
-				COUNT(CASE WHEN d.last_heartbeat < NOW() - INTERVAL '5 minutes' THEN 1 END) as stale_devices
+				COUNT(CASE WHEN d.status = 'online' AND d.last_heartbeat IS NOT NULL AND d.last_heartbeat >= NOW() - INTERVAL '1 minute' THEN 1 END) as online_count,
+				COUNT(CASE WHEN d.status = 'offline' OR (d.status = 'online' AND (d.last_heartbeat IS NULL OR d.last_heartbeat < NOW() - INTERVAL '5 minutes')) THEN 1 END) as offline_count,
+				COUNT(CASE WHEN d.status = 'online' AND d.last_heartbeat IS NOT NULL AND d.last_heartbeat < NOW() - INTERVAL '1 minute' AND d.last_heartbeat >= NOW() - INTERVAL '5 minutes' THEN 1 END) as idle_count
 			FROM iot_devices d
 			LEFT JOIN smart_cars c ON d.car_id = c.car_id
 		`;

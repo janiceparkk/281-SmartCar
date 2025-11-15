@@ -194,6 +194,46 @@ async function getDevices(params) {
 }
 
 /**
+ * Get active devices
+ * @returns {Array} - List of active devices
+ */
+async function getActiveDevices() {
+	try {
+		let params = ["active"];
+		let query = `
+			SELECT
+				d.device_id,
+				d.car_id,
+				d.device_type,
+				d.status,
+				d.last_heartbeat,
+				d.current_firmware_id,
+				d.certificate_issuer,
+				d.certificate_expiry,
+				d.last_firmware_update,
+				c.model as car_model,
+				c.user_id as car_owner_id,
+				f.version as firmware_version
+			FROM iot_devices d
+			LEFT JOIN smart_cars c ON d.car_id = c.car_id
+			LEFT JOIN device_firmware f ON d.current_firmware_id = f.firmware_id
+			WHERE 1=1 AND d.status = $1
+			ORDER BY d.device_id DESC
+		`;
+
+		const result = await pgPool.query(query, params);
+		console.log(
+			`[Device Manager] Retrieved ${result.rows.length} active devices`
+		);
+
+		return result.rows;
+	} catch (error) {
+		console.error("Error in getActiveDevices:", error.message);
+		throw error;
+	}
+}
+
+/**
  * Get a specific device by ID with role-based access control
  * @param {Object} params - Query parameters
  * @returns {Object|null} - Device object or null
@@ -701,9 +741,58 @@ async function getDeviceDiagnosticsData(params) {
 	}
 }
 
+/**
+ * Updates device by ID with role-based access control
+ * @param {Object} params - Query parameters
+ * @returns {Object|null} - Device object or null
+ */
+async function updateDevice(params) {
+	const { deviceId, userRole, userId, deviceStatus, deviceTimestamp } =
+		params;
+
+	try {
+		const query = `
+			UPDATE iot_devices AS d
+			SET status = $1,
+				last_heartbeat = COALESCE($2, NOW())
+			WHERE d.device_id = $3
+		`;
+		const params = [deviceStatus, deviceTimestamp ?? null, deviceId];
+
+		let sql = query;
+		const args = [...params];
+		if (userRole === "CarOwner") {
+			sql += `
+			AND EXISTS (
+				SELECT 1
+				FROM smart_cars c
+				WHERE c.car_id = d.car_id
+				AND c.user_id = $4
+			)
+			`;
+			args.push(userId);
+		}
+		sql += ` RETURNING *;`;
+
+		const result = await pgPool.query(sql, args);
+		if (result.rows.length === 0) {
+			return null;
+		}
+
+		console.log(
+			`[Device Manager] Updated device ${deviceId} for ${userRole}`
+		);
+		return result.rows[0];
+	} catch (error) {
+		console.error("Error in updateDevice:", error.message);
+		throw error;
+	}
+}
+
 module.exports = {
 	registerDevice,
 	getDevices,
+	getActiveDevices,
 	getDeviceById,
 	getDeviceStatus,
 	updateDeviceHeartbeat,
@@ -718,4 +807,5 @@ module.exports = {
 	getFleetAnalyticsData,
 	getFleetMapData,
 	getDeviceDiagnosticsData,
+	updateDevice,
 };

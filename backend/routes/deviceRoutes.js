@@ -5,6 +5,7 @@ const { authMiddleware } = require("./helper");
 const {
 	registerDevice,
 	getDevices,
+	getActiveDevices,
 	getDeviceById,
 	getDeviceStatus,
 	updateDeviceHeartbeat,
@@ -109,6 +110,25 @@ router.get("/", async (req, res) => {
 		console.error("Get Devices Error:", error.message);
 		res.status(500).json({
 			message: "Failed to retrieve devices due to server error.",
+		});
+	}
+});
+
+// GET /api/devices/active
+// Get all active devices
+router.get("/active", async (req, res) => {
+	try {
+		const devices = await getActiveDevices();
+
+		res.status(200).json({
+			message: "Active devices retrieved successfully",
+			count: devices.length,
+			data: devices,
+		});
+	} catch (error) {
+		console.error("Get Active Devices Error:", error.message);
+		res.status(500).json({
+			message: "Failed to retrieve active devices due to server error.",
 		});
 	}
 });
