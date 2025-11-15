@@ -12,6 +12,7 @@ const authRouter = require("./routes/authRoutes");
 const carRouter = require("./routes/carRoutes");
 const alertRouter = require("./routes/alertRoutes");
 const deviceRouter = require("./routes/deviceRoutes");
+const serviceRequestRouter = require("./routes/serviceRequestRoutes");
 
 // Import Services
 const mqttService = require("./services/mqttService");
@@ -54,6 +55,12 @@ pgPool
 		console.error("Failed to connect to PostgreSQL:", err.message);
 	});
 
+// --- MongoDB Connection ---
+mongoose
+	.connect(MONGO_URI)
+	.then(() => console.log("✅ Connected to MongoDB successfully."))
+	.catch((err) => console.error("❌ Failed to connect to MongoDB:", err.message));
+
 // --- Database Middleware ---
 app.use((req, res, next) => {
 	req.db = {
@@ -67,8 +74,11 @@ app.use((req, res, next) => {
 // --- Routes ---
 app.use("/api/auth", authRouter);
 app.use("/api/cars", carRouter);
+
 app.use("/api/devices", deviceRouter);
-// app.use("/api/alerts", alertRouter);
+app.use("/api/serviceRequests", serviceRequestRouter);
+app.use("/api/alerts", alertRouter);
+
 
 // --- WebSocket Server (For CARLA/IoT Real-Time Data Ingestion) ---
 //  Just a AI gen Place holder, will need IoT part will handle this
@@ -155,27 +165,6 @@ wss.on("connection", (ws, req) => {
 		}
 	});
 });
-
-// --- Real-time Broadcast Functions (For React Frontend Updates) ---
-//  Just a AI gen Place holder, will need IoT part will handle this
-/** Broadcasts updated car status to all connected WebSocket clients (dashboards). */
-function broadcastCarStatus(carData) {
-	const payload = JSON.stringify({
-		topic: "car_status_update",
-		data: {
-			car_id: carData.car_id,
-			status: carData.status,
-			lat: carData.current_latitude,
-			lon: carData.current_longitude,
-			heartbeat: carData.last_heartbeat,
-		},
-	});
-	wss.clients.forEach((client) => {
-		if (client.readyState === WebSocket.OPEN) {
-			client.send(payload);
-		}
-	});
-}
 
 /** Broadcasts a new critical alert to all connected WebSocket clients (dashboards). */
 //  Just a AI gen Place holder, will need IoT part will handle this

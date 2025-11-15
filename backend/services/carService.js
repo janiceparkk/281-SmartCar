@@ -1,6 +1,5 @@
 const { pgPool } = require("../config/database");
 
-
 // for later, might be good to have those extra, for now just let carRoutes.js have the simple working apis
 
 /** Get all cars with user role-based access */
@@ -62,8 +61,10 @@ async function getCarsByUserId(targetUserId, currentUserRole, currentUserId) {
 			ORDER BY sc.car_id
 		`;
 		params = [targetUserId];
-	} else if (currentUserRole === "ServiceStaff" || currentUserRole === "IoT") {
-		
+	} else if (
+		currentUserRole === "ServiceStaff" ||
+		currentUserRole === "IoT"
+	) {
 		query = `
 			SELECT sc.*, u.name as owner_name, u.email as owner_email 
 			FROM smart_cars sc 
@@ -114,7 +115,6 @@ async function getSmartCarById(carId, userRole, userId) {
 
 /** Register a new car with permission check */
 async function registerSmartCar(data, userRole, userId) {
-
 	// Determine which user ID to use
 	let postgresUserId;
 
@@ -145,8 +145,6 @@ async function registerSmartCar(data, userRole, userId) {
 	if (userResult.rows.length === 0) {
 		throw new Error(`User with ID ${postgresUserId} not found`);
 	}
-
-	
 
 	const result = await pgPool.query(
 		`INSERT INTO smart_cars (user_id, model, status, last_updated)

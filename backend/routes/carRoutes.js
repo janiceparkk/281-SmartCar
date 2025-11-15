@@ -6,7 +6,6 @@ const { registerSmartCar } = require("../services/carService");
 
 router.use((req, res, next) => {
 	const authHeader = req.header("Authorization");
-	
 	next();
 });
 
@@ -21,6 +20,29 @@ router.get("/", async (req, res) => {
 		console.error("Error fetching cars:", error);
 		res.status(500).json({
 			message: "Failed to retrieve cars from database.",
+		});
+	}
+});
+
+// GET /api/cars/active
+router.get("/active", async (req, res) => {
+	try {
+		let query = "";
+		let params = ["active"];
+
+		query = `
+			SELECT sc.*, u.name as owner_name, u.email as owner_email 
+			FROM smart_cars sc 
+			JOIN users u ON sc.user_id = u.user_id
+			WHERE sc.status = $1
+			ORDER BY sc.car_id
+		`;
+		const result = await pgPool.query(query, params);
+		return res.json(result.rows);
+	} catch (error) {
+		console.error("Error fetching active cars:", error);
+		res.status(500).json({
+			message: "Failed to retrieve active cars from database.",
 		});
 	}
 });
@@ -76,8 +98,6 @@ router.post("/", async (req, res) => {
 		});
 	}
 });
-
-
 
 // GET /api/cars/user  (Get cars for authenticated user)
 router.get("/user", async (req, res) => {
