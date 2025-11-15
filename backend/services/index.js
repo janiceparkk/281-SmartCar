@@ -12,7 +12,7 @@ const {
 	acknowledgeAlert,
 	closeAlert,
 	createTestAlert,
-} = require("./alertService");
+} = require("../controllers/alertController");
 
 module.exports = {
 	// Car services
