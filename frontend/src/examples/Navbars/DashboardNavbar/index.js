@@ -54,11 +54,10 @@ import {
 } from "context";
 
 function DashboardNavbar({ absolute, light, isMini }) {
-
 	const handleLogout = () => {
-		localStorage.removeItem("token"); 
-		
-		window.location.href = "/login"; 
+		localStorage.removeItem("token");
+
+		window.location.href = "/login";
 	};
 	const [navbarType, setNavbarType] = useState();
 	const [controller, dispatch] = useMaterialUIController();

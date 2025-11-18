@@ -13,8 +13,13 @@ Coded by www.creative-tim.com
 * The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
 */
 
+import { useEffect, useState } from "react";
 // @mui material components
 import Grid from "@mui/material/Grid";
+import TimeToLeaveIcon from "@mui/icons-material/TimeToLeave";
+import FeedbackIcon from "@mui/icons-material/Feedback";
+import CampaignIcon from "@mui/icons-material/Campaign";
+import PhoneAndroidIcon from "@mui/icons-material/PhoneAndroid";
 
 // Material Dashboard 2 React components
 import MDBox from "components/MDBox";
@@ -22,21 +27,43 @@ import MDBox from "components/MDBox";
 // Material Dashboard 2 React example components
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
-import Footer from "examples/Footer";
 import ReportsBarChart from "examples/Charts/BarCharts/ReportsBarChart";
 import ReportsLineChart from "examples/Charts/LineCharts/ReportsLineChart";
 import ComplexStatisticsCard from "examples/Cards/StatisticsCards/ComplexStatisticsCard";
 
 // Data
-import reportsBarChartData from "layouts/dashboard/data/reportsBarChartData";
+// import reportsBarChartData from "layouts/dashboard/data/reportsBarChartData";
 import reportsLineChartData from "layouts/dashboard/data/reportsLineChartData";
 
 // Dashboard components
-import Projects from "layouts/dashboard/components/Projects";
-import OrdersOverview from "layouts/dashboard/components/OrdersOverview";
+import AlertLogs from "layouts/dashboard/components/AlertLogs";
+import ServiceLogs from "./components/ServiceLogs";
 
-function Dashboard() {
-	const { sales, tasks } = reportsLineChartData;
+function Dashboard(props) {
+	const { fetchActiveCars, fetchActiveRequests, fetchActiveDevices } = props;
+
+	const [activeCars, setActiveCars] = useState(0);
+	const [activeAlerts, setActiveAlerts] = useState(20);
+	const [activeRequests, setActiveRequests] = useState(0);
+	const [activeDevices, setActiveDevices] = useState(0);
+
+	const { tasks } = reportsLineChartData;
+	const [audioData, setAudioData] = useState({
+		labels: ["Collision", "Horn", "Voice", "Siren", "Animal", "Tire"],
+		datasets: { label: "Counts", data: [1, 0, 0, 1, 0, 1] },
+	});
+
+	useEffect(() => {
+		fetchActiveCars().then((result) => {
+			setActiveCars(result.data.length);
+		});
+		fetchActiveRequests().then((result) => {
+			setActiveRequests(result.data.count);
+		});
+		fetchActiveDevices().then((result) => {
+			setActiveDevices(result.data.count);
+		});
+	}, []);
 
 	return (
 		<DashboardLayout>
@@ -47,13 +74,12 @@ function Dashboard() {
 						<MDBox mb={1.5}>
 							<ComplexStatisticsCard
 								color="dark"
-								icon="weekend"
-								title="Bookings"
-								count={281}
+								icon={<TimeToLeaveIcon />}
+								title="Cars Online"
+								count={activeCars}
 								percentage={{
 									color: "success",
-									amount: "+55%",
-									label: "than lask week",
+									label: "Just updated",
 								}}
 							/>
 						</MDBox>
@@ -61,13 +87,12 @@ function Dashboard() {
 					<Grid item xs={12} md={6} lg={3}>
 						<MDBox mb={1.5}>
 							<ComplexStatisticsCard
-								icon="leaderboard"
-								title="Today's Users"
-								count="2,300"
+								icon={<CampaignIcon />}
+								title="Active Alerts"
+								count={activeAlerts}
 								percentage={{
 									color: "success",
-									amount: "+3%",
-									label: "than last month",
+									label: "Just updated",
 								}}
 							/>
 						</MDBox>
@@ -76,13 +101,12 @@ function Dashboard() {
 						<MDBox mb={1.5}>
 							<ComplexStatisticsCard
 								color="success"
-								icon="store"
-								title="Revenue"
-								count="34k"
+								icon={<FeedbackIcon />}
+								title="Active Service Requests"
+								count={activeRequests}
 								percentage={{
 									color: "success",
-									amount: "+1%",
-									label: "than yesterday",
+									label: "Just updated",
 								}}
 							/>
 						</MDBox>
@@ -91,12 +115,11 @@ function Dashboard() {
 						<MDBox mb={1.5}>
 							<ComplexStatisticsCard
 								color="primary"
-								icon="person_add"
-								title="Followers"
-								count="+91"
+								icon={<PhoneAndroidIcon />}
+								title="Devices Online"
+								count={activeDevices}
 								percentage={{
 									color: "success",
-									amount: "",
 									label: "Just updated",
 								}}
 							/>
@@ -104,41 +127,25 @@ function Dashboard() {
 					</Grid>
 				</Grid>
 				<MDBox mt={4.5}>
-					<Grid container spacing={3}>
-						<Grid item xs={12} md={6} lg={4}>
+					<Grid container spacing={2}>
+						<Grid item xs={12} md={6} lg={6}>
 							<MDBox mb={3}>
 								<ReportsBarChart
 									color="info"
-									title="website views"
-									description="Last Campaign Performance"
-									date="campaign sent 2 days ago"
-									chart={reportsBarChartData}
+									title="Audio Event Counts"
+									description="For the Month"
+									date="Just updated"
+									chart={audioData}
 								/>
 							</MDBox>
 						</Grid>
-						<Grid item xs={12} md={6} lg={4}>
-							<MDBox mb={3}>
-								<ReportsLineChart
-									color="success"
-									title="daily sales"
-									description={
-										<>
-											(<strong>+15%</strong>) increase in
-											today sales.
-										</>
-									}
-									date="updated 4 min ago"
-									chart={sales}
-								/>
-							</MDBox>
-						</Grid>
-						<Grid item xs={12} md={6} lg={4}>
+						<Grid item xs={12} md={6} lg={6}>
 							<MDBox mb={3}>
 								<ReportsLineChart
 									color="dark"
-									title="completed tasks"
-									description="Last Campaign Performance"
-									date="just updated"
+									title="Alert Detection"
+									description="Per Month"
+									date="Just updated"
 									chart={tasks}
 								/>
 							</MDBox>
@@ -146,17 +153,12 @@ function Dashboard() {
 					</Grid>
 				</MDBox>
 				<MDBox>
-					<Grid container spacing={3}>
-						<Grid item xs={12} md={6} lg={8}>
-							<Projects />
-						</Grid>
-						<Grid item xs={12} md={6} lg={4}>
-							<OrdersOverview />
-						</Grid>
-					</Grid>
+					<ServiceLogs />
+				</MDBox>
+				<MDBox mt={3}>
+					<AlertLogs />
 				</MDBox>
 			</MDBox>
-			<Footer />
 		</DashboardLayout>
 	);
 }

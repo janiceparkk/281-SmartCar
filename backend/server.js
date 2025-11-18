@@ -183,6 +183,7 @@ app.use("/api/user", requireJWTAuth, userRoutes);
 
 // --- Public Routes ---
 app.use("/api/auth", authRouter);
+app.use("/api/alerts", alertRouter);
 
 // --- WebSocket with Authentication (Optional) ---
 wss.on("connection", (ws, req) => {
