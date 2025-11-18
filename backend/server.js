@@ -89,7 +89,6 @@ app.get(
 	}
 );
 
-
 // --- Auth Check Middleware ---
 const requireJWTAuth = (req, res, next) => {
 	const authHeader = req.headers.authorization;
@@ -136,7 +135,7 @@ app.post("/auth/logout", (req, res) => {
 	});
 });
 
-// PostgreSQL Pool (your existing code)
+// PostgreSQL Pool
 const pgPool = new Pool({
 	user: process.env.PG_USER,
 	host: process.env.PG_HOST,

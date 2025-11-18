@@ -31,7 +31,6 @@ function UserProfile() {
 				});
 
 				setUser(data.user);
-				setCars(data.cars || []);
 
 				const profileData = data.user.profile_data || {};
 
@@ -51,6 +50,8 @@ function UserProfile() {
 							: true,
 					...profileData,
 				});
+
+				await fetchUserCars(token);
 			} catch (err) {
 				console.error("Failed to fetch user profile:", err);
 			} finally {
@@ -60,6 +61,18 @@ function UserProfile() {
 
 		fetchProfile();
 	}, []);
+
+	const fetchUserCars = async (token) => {
+		try {
+			const response = await axios.get(`${API_URL}/cars/user`, {
+				headers: { Authorization: `Bearer ${token}` },
+			});
+			setCars(response.data || []);
+		} catch (err) {
+			console.error("Failed to fetch user cars:", err);
+			setCars([]);
+		}
+	};
 
 	const handleChange = (e) => {
 		setFormData({ ...formData, [e.target.name]: e.target.value });
@@ -73,12 +86,10 @@ function UserProfile() {
 		try {
 			const token = localStorage.getItem("token");
 
-			// Only put profile-related fields inside profile_data
 			const profilePayload = {
-				...user.profile_data, // preserve existing data
+				...user.profile_data,
 				location: formData.location,
 				picture: formData.picture,
-				// add any other fields you want to merge
 			};
 
 			const payload = {
@@ -113,7 +124,7 @@ function UserProfile() {
 			const token = localStorage.getItem("token");
 
 			const profilePayload = {
-				...user.profile_data, // preserve existing fields
+				...user.profile_data,
 				emailNotifications: formData.emailNotifications,
 				pushNotifications: formData.pushNotifications,
 			};
@@ -137,8 +148,16 @@ function UserProfile() {
 		}
 	};
 
-
-
+	// Function to refresh cars data
+	const refreshCars = async () => {
+		try {
+			const token = localStorage.getItem("token");
+			await fetchUserCars(token);
+		} catch (err) {
+			console.error("Failed to refresh cars:", err);
+			alert("Failed to refresh cars data.");
+		}
+	};
 
 	if (loading) {
 		return (
@@ -273,7 +292,7 @@ function UserProfile() {
 						</Card>
 					</Grid>
 
-					{/* Right - Notifications */}
+					{/* Right - Notifications & Cars */}
 					<Grid item xs={12} md={6}>
 						<Card>
 							<MDBox p={3}>
@@ -329,29 +348,79 @@ function UserProfile() {
 								</MDBox>
 								<Divider />
 								<MDBox mt={2}>
-									<MDTypography
-										variant="button"
-										fontWeight="medium"
+									<MDBox
+										display="flex"
+										justifyContent="space-between"
+										alignItems="center"
 										mb={1}
 									>
-										Linked Cars
-									</MDTypography>
+										<MDTypography
+											variant="button"
+											fontWeight="medium"
+										>
+											My Cars ({cars.length})
+										</MDTypography>
+										<MDButton
+											variant="outlined"
+											color="info"
+											size="small"
+											onClick={refreshCars}
+										>
+											Refresh
+										</MDButton>
+									</MDBox>
 									{cars.length > 0 ? (
 										cars.map((car) => (
-											<MDTypography
+											<MDBox
 												key={car.car_id}
-												variant="body2"
-												color="text"
+												mb={1}
+												p={1}
+												sx={{
+													border: "1px solid #e0e0e0",
+													borderRadius: 1,
+												}}
 											>
-												• {car.model} ({car.status})
-											</MDTypography>
+												<MDTypography
+													variant="body2"
+													fontWeight="medium"
+												>
+													{car.make} {car.model} (
+													{car.year})
+												</MDTypography>
+												<MDTypography
+													variant="caption"
+													color="text"
+												>
+													License: {car.license_plate}{" "}
+													| Status:{" "}
+													{car.status || "Active"}
+												</MDTypography>
+												{car.vin && (
+													<MDTypography
+														variant="caption"
+														color="text"
+														display="block"
+													>
+														VIN: {car.vin}
+													</MDTypography>
+												)}
+												{car.color && (
+													<MDTypography
+														variant="caption"
+														color="text"
+														display="block"
+													>
+														Color: {car.color}
+													</MDTypography>
+												)}
+											</MDBox>
 										))
 									) : (
 										<MDTypography
 											variant="body2"
 											color="text"
 										>
-											No cars linked to your profile.
+											No cars registered to your account.
 										</MDTypography>
 									)}
 								</MDBox>

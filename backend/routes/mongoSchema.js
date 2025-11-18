@@ -379,7 +379,6 @@ SystemLogSchema.statics.getComponentStats = function (hours = 1) {
 
 const SystemLog = mongoose.model("SystemLog", SystemLogSchema);
 
-
 const OIDCUserSchema = new mongoose.Schema(
 	{
 		provider: {
@@ -408,11 +407,11 @@ const OIDCUserSchema = new mongoose.Schema(
 		},
 		role: {
 			type: String,
-			enum: ["user", "admin"],
-			default: "user",
+			enum: ["CarOwner", "Admin", "ServiceStaff"],
+			default: "CarOwner",
 		},
 		pg_user_id: {
-			type: Number, 
+			type: Number,
 			default: null,
 		},
 		createdAt: {
@@ -422,7 +421,6 @@ const OIDCUserSchema = new mongoose.Schema(
 	},
 	{ timestamps: true }
 );
-
 
 const OIDCUser = mongoose.model("OIDCUser", OIDCUserSchema);
 

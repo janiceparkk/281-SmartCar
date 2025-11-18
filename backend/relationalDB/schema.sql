@@ -47,8 +47,13 @@ CREATE TABLE IF NOT EXISTS users (
 -- Core table for registered autonomous vehicles
 CREATE TABLE IF NOT EXISTS smart_cars (
     car_id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE, -- Owner (Foreign Key to users)
+    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    make VARCHAR(50),
     model VARCHAR(100),
+    year INTEGER,
+    color VARCHAR(30),
+    license_plate VARCHAR(20),
+    vin VARCHAR(17),
     status VARCHAR(50),
     current_latitude NUMERIC(9, 6),
     current_longitude NUMERIC(9, 6),

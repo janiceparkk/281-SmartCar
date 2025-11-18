@@ -3,11 +3,7 @@ const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-const {
-	registerUser,
-	authenticateUser,
-	registerSmartCar,
-} = require("../services");
+const { registerUser, authenticateUser } = require("../services");
 
 router.post("/register", async (req, res) => {
 	try {
@@ -20,8 +16,8 @@ router.post("/register", async (req, res) => {
 		if (existing.rows.length > 0) {
 			return res.status(400).json({ message: "User already exists." });
 		}
-		// Hash password, get role_id, etc. inside registerUser function
-		// Here we also initialize profile_data with default values
+
+		// Here we also initialize profile_data with default values, since they have click agree to sign up
 		const defaultProfileData = {
 			emailNotifications: true,
 			pushNotifications: true,
@@ -34,13 +30,8 @@ router.post("/register", async (req, res) => {
 			password,
 			name,
 			role,
-			profile_data: defaultProfileData, // <-- add defaults here
+			profile_data: defaultProfileData,
 		});
-
-		// If the new user is a CarOwner and has a model, register the car
-		if (newUser.role === "CarOwner" && model) {
-			await registerSmartCar({ model }, newUser.role, newUser.user_id);
-		}
 
 		res.status(201).json({
 			message: "User registered successfully.",
@@ -49,7 +40,7 @@ router.post("/register", async (req, res) => {
 				name: newUser.name,
 				email: newUser.email,
 				role: newUser.role,
-				profile_data: defaultProfileData, // include it in response
+				profile_data: defaultProfileData,
 			},
 		});
 	} catch (error) {

@@ -3,31 +3,39 @@ const { pgPool } = require("../config/database");
 // for later, might be good to have those extra, for now just let carRoutes.js have the simple working apis
 
 /** Get all cars with user role-based access */
-async function getAllCars(userRole, userId = null) {
+async function getAllCars(userId) {
+	// First get user role from database
+	const userResult = await pgPool.query(
+		`SELECT u.user_id, ur.role_name 
+         FROM users u 
+         JOIN user_roles ur ON u.role_id = ur.role_id 
+         WHERE u.user_id = $1`,
+		[userId]
+	);
+
+	if (userResult.rows.length === 0) {
+		throw new Error("User not found");
+	}
+
+	const userRole = userResult.rows[0].role_name;
+
 	let query = "";
 	let params = [];
 
 	if (userRole === "Admin") {
-		// Admin can see all cars
-		query = `
-            SELECT sc.*, u.name as owner_name, u.email as owner_email 
-            FROM smart_cars sc 
-            JOIN users u ON sc.user_id = u.user_id 
-            ORDER BY sc.car_id
-        `;
+		query = `SELECT sc.*, u.name as owner_name, u.email as owner_email 
+                 FROM smart_cars sc 
+                 JOIN users u ON sc.user_id = u.user_id 
+                 ORDER BY sc.car_id`;
 	} else if (userRole === "CarOwner") {
-		// CarOwner can only see their own cars
-		query = `
-            SELECT sc.*, u.name as owner_name, u.email as owner_email 
-            FROM smart_cars sc 
-            JOIN users u ON sc.user_id = u.user_id 
-            WHERE sc.user_id = $1 
-            ORDER BY sc.car_id
-        `;
+		query = `SELECT sc.*, u.name as owner_name, u.email as owner_email 
+                 FROM smart_cars sc 
+                 JOIN users u ON sc.user_id = u.user_id 
+                 WHERE sc.user_id = $1 
+                 ORDER BY sc.car_id`;
 		params = [userId];
 	} else {
-		// ServiceStaff or other roles - adjust as needed
-		query = "SELECT * FROM smart_cars ORDER BY car_id";
+		throw new Error("Not authorized to view cars");
 	}
 
 	const result = await pgPool.query(query, params);
@@ -35,43 +43,41 @@ async function getAllCars(userRole, userId = null) {
 }
 
 /** Get cars by user ID with permission check */
-async function getCarsByUserId(targetUserId, currentUserRole, currentUserId) {
-	// Build query based on permissions
+async function getCarsByUserId(targetUserId, currentUserId) {
+	// First get current user's role
+	const userResult = await pgPool.query(
+		`SELECT u.user_id, ur.role_name 
+         FROM users u 
+         JOIN user_roles ur ON u.role_id = ur.role_id 
+         WHERE u.user_id = $1`,
+		[currentUserId]
+	);
+
+	if (userResult.rows.length === 0) {
+		throw new Error("Current user not found");
+	}
+
+	const currentUserRole = userResult.rows[0].role_name;
+
 	let query = "";
 	let params = [];
 
 	if (currentUserRole === "Admin") {
-		query = `
-			SELECT sc.*, u.name as owner_name, u.email as owner_email 
-			FROM smart_cars sc 
-			JOIN users u ON sc.user_id = u.user_id 
-			WHERE sc.user_id = $1 
-			ORDER BY sc.car_id
-		`;
+		query = `SELECT sc.*, u.name as owner_name, u.email as owner_email 
+                 FROM smart_cars sc 
+                 JOIN users u ON sc.user_id = u.user_id 
+                 WHERE sc.user_id = $1 
+                 ORDER BY sc.car_id`;
 		params = [targetUserId];
 	} else if (currentUserRole === "CarOwner") {
 		if (targetUserId !== currentUserId) {
 			return []; // No permission to view other users' cars
 		}
-		query = `
-			SELECT sc.*, u.name as owner_name, u.email as owner_email 
-			FROM smart_cars sc 
-			JOIN users u ON sc.user_id = u.user_id 
-			WHERE sc.user_id = $1 
-			ORDER BY sc.car_id
-		`;
-		params = [targetUserId];
-	} else if (
-		currentUserRole === "ServiceStaff" ||
-		currentUserRole === "IoT"
-	) {
-		query = `
-			SELECT sc.*, u.name as owner_name, u.email as owner_email 
-			FROM smart_cars sc 
-			JOIN users u ON sc.user_id = u.user_id 
-			WHERE sc.user_id = $1 
-			ORDER BY sc.car_id
-		`;
+		query = `SELECT sc.*, u.name as owner_name, u.email as owner_email 
+                 FROM smart_cars sc 
+                 JOIN users u ON sc.user_id = u.user_id 
+                 WHERE sc.user_id = $1 
+                 ORDER BY sc.car_id`;
 		params = [targetUserId];
 	} else {
 		// Unknown role - no access
@@ -114,10 +120,24 @@ async function getSmartCarById(carId, userRole, userId) {
 }
 
 /** Register a new car with permission check */
-async function registerSmartCar(data, userRole, userId) {
-	// Determine which user ID to use
+async function registerSmartCar(data, userId) {
+	// First, get the user's role from the database by joining with user_roles
+	const userResult = await pgPool.query(
+		`SELECT u.user_id, ur.role_name 
+         FROM users u 
+         JOIN user_roles ur ON u.role_id = ur.role_id 
+         WHERE u.user_id = $1`,
+		[userId]
+	);
+
+	if (userResult.rows.length === 0) {
+		throw new Error(`User with ID ${userId} not found`);
+	}
+
+	const userRole = userResult.rows[0].role_name;
 	let postgresUserId;
 
+	// Determine which user ID to use based on actual role from database
 	if (userRole === "Admin") {
 		// Admin can register cars for any user
 		postgresUserId = data.user_id;
@@ -136,29 +156,38 @@ async function registerSmartCar(data, userRole, userId) {
 		throw new Error("Not authorized to register cars");
 	}
 
-	// Verify the user exists
-	const userResult = await pgPool.query(
-		"SELECT user_id FROM users WHERE user_id = $1",
-		[postgresUserId]
-	);
+	// Verify the target user exists (if different from current user)
+	if (postgresUserId !== userId) {
+		const targetUserResult = await pgPool.query(
+			"SELECT user_id FROM users WHERE user_id = $1",
+			[postgresUserId]
+		);
 
-	if (userResult.rows.length === 0) {
-		throw new Error(`User with ID ${postgresUserId} not found`);
+		if (targetUserResult.rows.length === 0) {
+			throw new Error(`Target user with ID ${postgresUserId} not found`);
+		}
 	}
 
+	// Insert the car
 	const result = await pgPool.query(
-		`INSERT INTO smart_cars (user_id, model, status, last_updated)
-         VALUES ($1, $2, $3, $4) 
+		`INSERT INTO smart_cars (user_id, make, model, year, color, license_plate, vin, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
          RETURNING *`,
 		[
 			postgresUserId,
-			data.model || "Autonomous Vehicle",
+			data.make,
+			data.model,
+			data.year,
+			data.color,
+			data.license_plate,
+			data.vin,
 			data.status || "active",
-			new Date(),
 		]
 	);
 
-	console.log(`[DB] Registered new car with ID: ${result.rows[0].car_id}`);
+	console.log(
+		`[DB] Registered new car for user ${postgresUserId} with role ${userRole}, car ID: ${result.rows[0].car_id}`
+	);
 	return result.rows[0];
 }
 

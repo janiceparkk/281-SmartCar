@@ -1,7 +1,7 @@
 const passport = require("passport");
 const GoogleStrategy = require("passport-google-oauth20").Strategy;
 const { OIDCUser } = require("../routes/mongoSchema");
-const { registerUser } = require("../services"); 
+const { registerUser } = require("../services");
 const jwt = require("jsonwebtoken");
 
 passport.use(
@@ -18,22 +18,22 @@ passport.use(
 				let user = await OIDCUser.findOne({ providerId: profile.id });
 
 				if (!user) {
-					// 1️⃣ Create corresponding PostgreSQL user
+					// Create corresponding PostgreSQL user
 					const pgUser = await registerUser({
 						email: profile.emails[0].value,
 						name: profile.displayName,
-						role: "CarOwner", // default
+						role: "CarOwner", // default to CarOwner, Admin can change the roles on admin dashboard
 						password: null, // OAuth users don't have password
 					});
 
-					// 2️⃣ Create MongoDB OIDC user including pg_user_id
+					// Create MongoDB OIDC user including pg_user_id so that we can connect them. Wanted to separate Google OAuth users and psql users
 					const userData = {
 						provider: "google",
 						providerId: profile.id,
 						email: profile.emails[0].value,
 						name: profile.displayName,
 						picture: profile.photos[0]?.value,
-						pg_user_id: pgUser.user_id, // link to PostgreSQL
+						pg_user_id: pgUser.user_id,
 					};
 
 					user = await OIDCUser.create(userData);
@@ -41,7 +41,6 @@ passport.use(
 						`✅ Created new Google user in Mongo + PostgreSQL: ${user.email}`
 					);
 				} else {
-					// Optional: ensure pg_user_id exists
 					if (!user.pg_user_id) {
 						const pgUser = await registerUser({
 							email: user.email,
