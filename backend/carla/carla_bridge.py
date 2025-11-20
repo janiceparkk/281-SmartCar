@@ -8,7 +8,7 @@ import numpy as np
 import requests
 import os
 import threading
-from flask import Flask, jsonify, Response, abort, request  # Add 'request' here
+from flask import Flask, jsonify, Response, abort, request
 from flask_cors import CORS
 import argparse 
 
@@ -43,13 +43,16 @@ def upload_audio_to_express(car_id, audio_path=AUDIO_FILE_PATH):
     except Exception as e:
         print(f"ERROR: [{car_id}] Could not connect to Express backend for audio upload: {e}")
 
-def camera_callback(image, car_id, car_data):
+def camera_callback(image, car_id, car_data, camera_type):
     img_data = np.array(image.raw_data).reshape((image.height, image.width, 4))
     img_bgr = img_data[:, :, :3]
     ret, jpeg = cv2.imencode('.jpeg', img_bgr, [cv2.IMWRITE_JPEG_QUALITY, 70])
     if ret:
         with car_data['lock']:
-            car_data['video_frame'] = jpeg.tobytes()
+            if camera_type == 'first_person':
+                car_data['first_person_frame'] = jpeg.tobytes()
+            elif camera_type == 'third_person':
+                car_data['third_person_frame'] = jpeg.tobytes()
 
 def update_telemetry_data(car_id, car_data):
     vehicle = car_data['vehicle']
@@ -68,7 +71,9 @@ def carla_simulation_thread(car_id, spawn_point, tm_port, model='vehicle.tesla.m
     """Connects to CARLA, sets up actors for a single car, and runs its simulation loop."""
     
     vehicle = None
-    camera = None
+    first_person_camera = None
+    third_person_camera = None
+    
     try:
         client = carla.Client('localhost', 2000)
         client.set_timeout(10.0)
@@ -76,7 +81,6 @@ def carla_simulation_thread(car_id, spawn_point, tm_port, model='vehicle.tesla.m
         bp_library = world.get_blueprint_library() 
         
         # --- Setup Vehicle ---
-        # Use the provided model or fallback to Tesla Model 3
         vehicle_bp = bp_library.find(model)
         if not vehicle_bp:
             print(f"WARNING: [{car_id}] Model {model} not found, using Tesla Model 3 as fallback")
@@ -91,23 +95,51 @@ def carla_simulation_thread(car_id, spawn_point, tm_port, model='vehicle.tesla.m
         vehicle.set_autopilot(True, tm_port) 
         print(f"INFO: [{car_id}] Vehicle spawned and set to Autopilot on TM port {tm_port}.")
 
-        # --- Setup Camera Sensor ---
-        camera_bp = bp_library.find('sensor.camera.rgb')
-        camera_bp.set_attribute('image_size_x', '640')
-        camera_bp.set_attribute('image_size_y', '480')
-        camera_transform = carla.Transform(carla.Location(x=1.5, z=2.4))
-        camera = world.spawn_actor(camera_bp, camera_transform, attach_to=vehicle)
+        # --- Setup First Person Camera (Dashboard View) ---
+        first_person_camera_bp = bp_library.find('sensor.camera.rgb')
+        first_person_camera_bp.set_attribute('image_size_x', '640')
+        first_person_camera_bp.set_attribute('image_size_y', '480')
+        first_person_transform = carla.Transform(carla.Location(x=1.5, z=2.4))
+        first_person_camera = world.spawn_actor(
+            first_person_camera_bp, 
+            first_person_transform, 
+            attach_to=vehicle
+        )
+        
+        # --- Setup Third Person Camera (Behind and Above the Car) ---
+        third_person_camera_bp = bp_library.find('sensor.camera.rgb')
+        third_person_camera_bp.set_attribute('image_size_x', '640')
+        third_person_camera_bp.set_attribute('image_size_y', '480')
+        # Position camera behind and above the vehicle for third-person view
+        third_person_transform = carla.Transform(
+            carla.Location(x=-6.0, z=4.0),  # 6 meters behind, 4 meters above
+            carla.Rotation(pitch=-15.0)     # Slightly looking down
+        )
+        third_person_camera = world.spawn_actor(
+            third_person_camera_bp, 
+            third_person_transform, 
+            attach_to=vehicle  # This camera will follow the vehicle
+        )
         
         # Initialize the global data store for this car
         car_agents[car_id] = {
             'vehicle': vehicle,
-            'camera': camera,
+            'first_person_camera': first_person_camera,
+            'third_person_camera': third_person_camera,
             'telemetry': {'lat': 0.0, 'lon': 0.0, 'speed': 0.0, 'timestamp': time.time()},
-            'video_frame': None,
+            'first_person_frame': None,
+            'third_person_frame': None,
             'lock': threading.Lock()
         }
         car_data = car_agents[car_id]
-        camera.listen(lambda image: camera_callback(image, car_id, car_data))
+        
+        # Start listening to both cameras
+        first_person_camera.listen(
+            lambda image: camera_callback(image, car_id, car_data, 'first_person')
+        )
+        third_person_camera.listen(
+            lambda image: camera_callback(image, car_id, car_data, 'third_person')
+        )
 
         # --- Main Simulation Loop ---
         last_audio_time = time.time()
@@ -130,12 +162,14 @@ def carla_simulation_thread(car_id, spawn_point, tm_port, model='vehicle.tesla.m
             del car_agents[car_id]
         
         if CLEANUP_ON_EXIT:
-            # Explicitly disable autopilot before destroying vehicle (good practice)
+            # Explicitly disable autopilot before destroying vehicle
             if vehicle is not None and vehicle.is_alive:
-                 vehicle.set_autopilot(False) # Disable autopilot cleanly
+                 vehicle.set_autopilot(False)
             
-            if camera is not None and camera.is_alive: 
-                camera.destroy()
+            if first_person_camera is not None and first_person_camera.is_alive: 
+                first_person_camera.destroy()
+            if third_person_camera is not None and third_person_camera.is_alive: 
+                third_person_camera.destroy()
             if vehicle is not None and vehicle.is_alive: 
                 vehicle.destroy()
             print(f"INFO: [{car_id}] Cleanup complete.")
@@ -157,7 +191,8 @@ def get_telemetry(car_id):
         })
 
 @app.route('/video-stream/<string:car_id>', methods=['GET'])
-def video_feed(car_id):
+def video_feed_first_person(car_id):
+    """First person/dashboard view"""
     if car_id not in car_agents:
         abort(404, description=f"Car ID {car_id} not found.")
     car_data = car_agents[car_id]
@@ -165,7 +200,28 @@ def video_feed(car_id):
     def generate_video_stream():
         while True:
             with car_data['lock']:
-                frame = car_data['video_frame']
+                frame = car_data['first_person_frame']
+            if frame is not None:
+                yield (b'--frame\r\n' 
+                       b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+            time.sleep(0.05)
+    
+    return Response(
+        generate_video_stream(), 
+        mimetype='multipart/x-mixed-replace; boundary=frame'
+    )
+
+@app.route('/video-stream-third-person/<string:car_id>', methods=['GET'])
+def video_feed_third_person(car_id):
+    """Third person/external view of the car"""
+    if car_id not in car_agents:
+        abort(404, description=f"Car ID {car_id} not found.")
+    car_data = car_agents[car_id]
+    
+    def generate_video_stream():
+        while True:
+            with car_data['lock']:
+                frame = car_data['third_person_frame']
             if frame is not None:
                 yield (b'--frame\r\n' 
                        b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
@@ -258,8 +314,10 @@ def remove_car(car_id):
     
     # Cleanup actors
     if CLEANUP_ON_EXIT:
-        if car_data['camera'] and car_data['camera'].is_alive:
-            car_data['camera'].destroy()
+        if car_data['first_person_camera'] and car_data['first_person_camera'].is_alive:
+            car_data['first_person_camera'].destroy()
+        if car_data['third_person_camera'] and car_data['third_person_camera'].is_alive:
+            car_data['third_person_camera'].destroy()
         if car_data['vehicle'] and car_data['vehicle'].is_alive:
             car_data['vehicle'].set_autopilot(False)
             car_data['vehicle'].destroy()
@@ -268,6 +326,17 @@ def remove_car(car_id):
     del car_agents[car_id]
     
     return jsonify({"message": f"Car {car_id} removed successfully"})
+
+@app.route('/camera-positions', methods=['GET'])
+def get_camera_positions():
+    """Get available camera views for each car"""
+    camera_info = {}
+    for car_id, car_data in car_agents.items():
+        camera_info[car_id] = {
+            "first_person": "/video-stream/" + car_id,
+            "third_person": "/video-stream-third-person/" + car_id
+        }
+    return jsonify(camera_info)
 
 
 # --- MAIN EXECUTION ---
@@ -307,7 +376,7 @@ if __name__ == '__main__':
         for i in range(num_to_spawn):
             car_id = f"{CAR_ID_PREFIX}{1000 + i}"
             spawn_point = spawn_points[i]
-            tm_port = TM_PORT_BASE + i # Calculate unique TM port for this car
+            tm_port = TM_PORT_BASE + i
 
             print(f"INFO: Initializing car thread for {car_id} on TM Port {tm_port}...")
             
@@ -321,6 +390,10 @@ if __name__ == '__main__':
             time.sleep(1.0) 
 
         print(f"INFO: Starting Python Bridge API on http://localhost:{CARLA_BRIDGE_PORT}")
+        print(f"INFO: Available endpoints:")
+        print(f"  - First person view: /video-stream/<car_id>")
+        print(f"  - Third person view: /video-stream-third-person/<car_id>")
+        print(f"  - Camera positions: /camera-positions")
         print(f"INFO: CORS enabled for all routes")
         app.run(host='0.0.0.0', port=CARLA_BRIDGE_PORT, debug=True, use_reloader=True)
 
