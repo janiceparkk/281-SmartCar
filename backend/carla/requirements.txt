@@ -1,7 +1,6 @@
 addict==2.4.0
 attrs==24.2.0
 backcall==0.2.0
-carla @ file:///home/jjl/carla/PythonAPI/carla/dist/carla-0.9.15-cp37-cp37m-manylinux_2_27_x86_64.whl
 certifi==2025.11.12
 charset-normalizer==3.4.4
 click==8.1.8
@@ -15,6 +14,7 @@ dash-table==5.0.0
 decorator==5.1.1
 fastjsonschema==2.21.2
 Flask==2.2.5
+Flask-Cors==5.0.0
 fonttools==4.38.0
 future==1.0.0
 gevent==22.10.2

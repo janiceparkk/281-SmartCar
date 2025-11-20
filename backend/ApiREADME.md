@@ -1,6 +1,6 @@
 ### Setup before running server.js/all in one:
 
-## Before doing so, make sure you have mongodb installed. Get started here: https://www.mongodb.com/docs/manual/installation/
+## Before doing so, make sure you have mongodb installed. Get started here: https://www.mongodb.com/docs/manual/administration/install-community/?operating-system=linux&linux-distribution=ubuntu&linux-package=default&search-linux=with-search-linux
 
 ```bash
 ./initMongoDB.sh

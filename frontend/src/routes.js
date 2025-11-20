@@ -11,6 +11,7 @@ import SignUp from "layouts/LoginRegister/SignUp";
 import Login from "layouts/LoginRegister/Login";
 import UserProfile from "layouts/UserProfile";
 import LogDetails from "layouts/dashboard/components/ServiceLogs/logDetails";
+import CarlaDashboard from "layouts/CarlaDashboard";
 
 // IoT Device Management Layouts
 import IoTDevices from "layouts/iot-devices";
@@ -176,7 +177,9 @@ export const getRoutes = () => {
 		{
 			key: "telemetry-dashboard",
 			route: "/iot-devices/:deviceId/telemetry",
-			component: <ProtectedComponent component={<TelemetryDashboard />} />,
+			component: (
+				<ProtectedComponent component={<TelemetryDashboard />} />
+			),
 			protected: true,
 		},
 		{
@@ -194,7 +197,9 @@ export const getRoutes = () => {
 		{
 			key: "firmware-management",
 			route: "/iot-devices/firmware/management",
-			component: <ProtectedComponent component={<FirmwareManagement />} />,
+			component: (
+				<ProtectedComponent component={<FirmwareManagement />} />
+			),
 			protected: true,
 		},
 
@@ -224,6 +229,16 @@ export const getRoutes = () => {
 			component: <ProtectedComponent component={<UserProfile />} />,
 			protected: true,
 		},
+		{
+			type: "collapse",
+			name: "Car Dashboard/Config",
+			key: "car-config",
+			icon: <Icon fontSize="small">config</Icon>,
+			route: "/car/config",
+			component: <ProtectedComponent component={<CarlaDashboard />} />,
+			protected: true,
+		},
+		,
 	];
 
 	// If not logged in, show only public routes

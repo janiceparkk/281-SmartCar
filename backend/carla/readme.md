@@ -53,133 +53,292 @@ tar -xvzf CARLA_0.9.15.tar.gz
 
 ## Adjust the directory based on where u install carla accordingly.
 
-The following documentation outlines the CARLA Bridge API (`carla_bridge.py`) and its command-line usage based on the fixed script.
-
----
-
 ## 📡 CARLA Bridge API Documentation
 
-The `carla_bridge.py` script serves a Flask API for managing simulated CARLA vehicles. It runs on the base URL: `http://localhost:5001`.
+The `carla_bridge.py` script serves a Flask API for managing simulated CARLA vehicles. It runs on the base URL: `http://localhost:5001`.
 
 ### Configuration Details
 
-| **Parameter**         | **Value**          | **Description**                                                          |
-| --------------------- | ------------------ | ------------------------------------------------------------------------ |
-| **Bridge Port**       | `5001`             | The port the Flask API is served on.                                     |
-| **CARLA Server Port** | `2000`             | The port for the CARLA simulator connection (standard).                  |
-| **TM Port Range**     | `8000+`            | Traffic Manager RPC ports are dynamically assigned starting from `8000`. |
-| **Number of Cars**    | `3` (Configurable) | Default number of vehicle actors spawned.                                |
+| Parameter         | Value              | Description                                                              |
+| ----------------- | ------------------ | ------------------------------------------------------------------------ |
+| Bridge Port       | `5001`             | The port the Flask API is served on.                                     |
+| CARLA Server Port | `2000`             | The port for the CARLA simulator connection (standard).                  |
+| TM Port Range     | `8000+`            | Traffic Manager RPC ports are dynamically assigned starting from `8000`. |
+| Number of Cars    | `3` (Configurable) | Default number of vehicle actors spawned.                                |
+| CORS Enabled      | `Yes`              | Cross-Origin Resource Sharing enabled for all routes                     |
 
 ---
 
-### 1\. `GET /car-list` 🚗
+### GET /car-list 🚗
 
 Retrieves a list of the unique IDs for all cars currently spawned and managed by the Python bridge server.
 
-| **Detail**   | **Value**   |
-| ------------ | ----------- |
-| **Method**   | `GET`       |
-| **Endpoint** | `/car-list` |
+bash
 
-#### Response Body (JSON)
+CopyDownload
 
-Returns an array of car ID strings.
+curl http://localhost:5001/car-list
 
-JSON
+Response:
 
-```
+json
+
+CopyDownload
+
 ["CAR1000", "CAR1001", "CAR1002"]
 
-```
-
 ---
 
-### 2\. `GET /telemetry/<car_id>` 🛰️
+### GET /telemetry/<car_id> 🛰️
 
-Retrieves the latest real-time telemetry data (location and speed) for a specific car ID. Returns a **404 Not Found** if the car has crashed and been cleaned up, or if the ID is invalid.
+Retrieves the latest real-time telemetry data (location and speed) for a specific car ID.
 
-| **Detail**   | **Value**                    |
-| ------------ | ---------------------------- |
-| **Method**   | `GET`                        |
-| **Endpoint** | `/telemetry/<string:car_id>` |
+bash
 
-#### Path Parameter
+CopyDownload
 
-| **Name** | **Type** | **Description**                                 |
-| -------- | -------- | ----------------------------------------------- |
-| `car_id` | `string` | The unique ID of the vehicle (e.g., `CAR1001`). |
+curl http://localhost:5001/telemetry/CAR1001
 
-#### Response Body (JSON)
+Response:
 
-| **Field**             | **Type** | **Description**                                           |
-| --------------------- | -------- | --------------------------------------------------------- |
-| `car_id`              | `string` | The ID of the requested car.                              |
-| `telemetry.lat`       | `number` | The vehicle's current **latitude** (CARLA Y-coordinate).  |
-| `telemetry.lon`       | `number` | The vehicle's current **longitude** (CARLA X-coordinate). |
-| `telemetry.speed`     | `number` | The vehicle's current speed in **km/h**.                  |
-| `telemetry.timestamp` | `number` | Unix timestamp of when the data was collected.            |
+json
 
-JSON
+CopyDownload
 
-```
 {
-    "car_id": "CAR1001",
-    "telemetry": {
-        "lat": 150.25,
-        "lon": 5.89,
-        "speed": 65.4,
-        "timestamp": 1732066423.123
-    }
+"car_id": "CAR1001",
+"telemetry": {
+"lat": 150.25,
+"lon": 5.89,
+"speed": 65.4,
+"timestamp": 1732066423.123
+}
 }
 
-```
+---
+
+### GET /video-stream/<car_id> 🎥
+
+Provides a continuous, live Motion JPEG (MJPEG) video stream from the RGB camera attached to the specified car.
+
+bash
+
+CopyDownload
+
+# Use in HTML: <img src="http://localhost:5001/video-stream/CAR1002" />
+
+Format: Motion JPEG (MJPEG)\
+Resolution: 640x480
 
 ---
 
-### 3\. `GET /video-stream/<car_id>` 🎥
+### GET /health 🩺
 
-Provides a continuous, live Motion JPEG (MJPEG) video stream from the RGB camera attached to the specified car. Returns a **404 Not Found** if the car is not active.
+Provides health status and basic information about the CARLA bridge server.
 
-| **Detail**       | **Value**                                   |
-| ---------------- | ------------------------------------------- |
-| **Method**       | `GET`                                       |
-| **Endpoint**     | `/video-stream/<string:car_id>`             |
-| **Content Type** | `multipart/x-mixed-replace; boundary=frame` |
+bash
 
-#### Usage Notes
+CopyDownload
 
-- **Format:** Motion JPEG (MJPEG) for direct streaming.
+curl http://localhost:5001/health
 
-- **Resolution:** 640x480.
+Response:
 
-- **Example HTML Usage:** `<img src="http://localhost:5001/video-stream/CAR1002" />`
+json
+
+CopyDownload
+
+{
+"status": "healthy",
+"cars_connected": 3,
+"active_cars": ["CAR1000", "CAR1001", "CAR1002"]
+}
+
+---
+
+### POST /add-car ➕
+
+Manually adds a new car to the simulation with custom parameters including model selection and spawn location.
+
+bash
+
+CopyDownload
+
+curl -X POST http://localhost:5001/add-car\
+ -H "Content-Type: application/json"\
+ -d '{
+"car_id": "TESLA_001",
+"model": "vehicle.tesla.model3",
+"location": {
+"lat": 205.0,
+"lon": 15.0
+}
+}'
+
+Available Vehicle Models:
+
+- `vehicle.tesla.model3`
+
+- `vehicle.audi.tt`
+
+- `vehicle.bmw.grandtourer`
+
+- `vehicle.chevrolet.impala`
+
+- `vehicle.dodge.charger`
+
+- `vehicle.ford.mustang`
+
+- `vehicle.jeep.wrangler`
+
+- `vehicle.lincoln.mkz`
+
+- `vehicle.mercedes.coupe`
+
+- `vehicle.mini.cooperst`
+
+- `vehicle.nissan.micra`
+
+- `vehicle.seat.leon`
+
+- `vehicle.toyota.prius`
+
+- `vehicle.volkswagen.t2`
+
+Response:
+
+json
+
+CopyDownload
+
+{
+"message": "Car TESLA_001 added successfully",
+"car_id": "TESLA_001",
+"model": "vehicle.tesla.model3",
+"tm_port": 8003
+}
+
+---
+
+### POST /remove-car/<car_id> 🗑️
+
+Removes a specific car from the simulation and cleans up its resources.
+
+bash
+
+CopyDownload
+
+curl -X POST http://localhost:5001/remove-car/CAR1001
+
+Response:
+
+json
+
+CopyDownload
+
+{
+"message": "Car CAR1001 removed successfully"
+}
 
 ---
 
 ## 🖥️ Command Line Usage
 
-The script supports a command-line argument to control the cleanup behavior of CARLA actors (vehicles and sensors) when the Python thread exits (e.g., due to a crash or `CTRL+C`).
+### Standard Mode (Default)
 
-### 1\. Standard Mode (Default)
+Cleans up CARLA actors on crash or script exit.
 
-This mode **cleans up (destroys) the CARLA actors** on crash or script exit. This is the recommended mode for production/stable environments.
+bash
 
-Bash
+CopyDownload
 
-```
 python3 carla_bridge.py
 
-```
+### Debug Mode
 
-### 2\. Debug Mode (`--no-cleanup`)
+Skips cleanup for manual inspection of vehicles.
 
-This mode **skips cleanup**, leaving the car and its sensors in the CARLA simulation world at their final location for manual inspection. This is useful for debugging physics or crash locations.
+bash
 
-Bash
+CopyDownload
 
-```
 python3 carla_bridge.py --no-cleanup
 
-```
+> ⚠️ Warning: If you use `--no-cleanup` and restart the script, the new cars may conflict with the old, remaining actors. You must manually destroy the old actors or restart the CARLA server application between runs.
 
-> ⚠️ **Warning:** If you use `--no-cleanup` and restart the script, the new cars may conflict with the old, remaining actors. You must manually destroy the old actors or restart the CARLA server application between runs.
+---
+
+## 🔧 Integration Example
+
+### React Frontend Integration
+
+javascript
+
+CopyDownload
+
+// Adding a new car
+const addCar = async () => {
+const response = await fetch('http://localhost:5001/add-car', {
+method: 'POST',
+headers: {
+'Content-Type': 'application/json',
+},
+body: JSON.stringify({
+car_id: 'MY_CAR_001',
+model: 'vehicle.audi.tt',
+location: {
+lat: 210.5,
+lon: 18.2
+}
+}),
+});
+const result = await response.json();
+console.log(result.message);
+};
+
+// Removing a car
+const removeCar = async (carId) => {
+const response = await fetch(`http://localhost:5001/remove-car/${carId}`, {
+method: 'POST',
+});
+const result = await response.json();
+console.log(result.message);
+};
+
+### Error Handling
+
+All endpoints return appropriate HTTP status codes:
+
+- `200` - Success
+
+- `400` - Bad Request (missing/invalid parameters)
+
+- `404` - Car not found
+
+- `500` - Internal server error
+
+Error responses include an `error` field with descriptive messages:
+
+json
+
+CopyDownload
+
+{
+"error": "Car ID is required"
+}
+
+---
+
+## 📋 Notes
+
+- CORS Support: All endpoints support Cross-Origin requests for web frontend integration
+
+- Real-time Updates: Telemetry and video streams update in real-time (telemetry every second, video at ~20fps)
+
+- Thread Safety: All car data access is protected by threading locks
+
+- Automatic Cleanup: Vehicles automatically clean up on exit unless `--no-cleanup` flag is used
+
+- Unique IDs: Car IDs must be unique across the simulation
+
+- Coordinate System: Uses CARLA's coordinate system where X=longitude, Y=latitude

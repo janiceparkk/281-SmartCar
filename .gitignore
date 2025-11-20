@@ -11,3 +11,7 @@ frontend/build/*
 
 
 */.env
+
+carla_venv_37
+
+frontend/package-lock.json
