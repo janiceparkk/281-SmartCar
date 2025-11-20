@@ -7,6 +7,15 @@ import Login from "layouts/LoginRegister/Login";
 import UserProfile from "layouts/UserProfile";
 import LogDetails from "layouts/dashboard/components/ServiceLogs/logDetails";
 
+// IoT Device Management Layouts
+import IoTDevices from "layouts/iot-devices";
+import RegisterDevice from "layouts/iot-devices/RegisterDevice";
+import DeviceDetails from "layouts/iot-devices/DeviceDetails";
+import TelemetryDashboard from "layouts/iot-devices/TelemetryDashboard";
+import CommandCenter from "layouts/iot-devices/CommandCenter";
+import FleetAnalytics from "layouts/iot-devices/FleetAnalytics";
+import FirmwareManagement from "layouts/iot-devices/FirmwareManagement";
+
 import Icon from "@mui/material/Icon";
 import ProtectedComponent from "components/ProtectedComponent";
 
@@ -82,7 +91,8 @@ export const getRoutes = () => {
 
 			return res;
 		} catch (error) {
-			return false;
+			console.error("Error fetching active devices:", error);
+			return { data: { count: 0 } };
 		}
 	}
 
@@ -98,7 +108,8 @@ export const getRoutes = () => {
 
 			return res;
 		} catch (error) {
-			return false;
+			console.error("Error fetching active requests:", error);
+			return { data: { count: 0 } };
 		}
 	}
 
@@ -127,6 +138,53 @@ export const getRoutes = () => {
 			key: "log-details",
 			route: "/logs/:logId",
 			component: <ProtectedComponent component={<LogDetails />} />,
+			protected: true,
+		},
+
+		// IoT Device Management (protected)
+		{
+			type: "collapse",
+			name: "IoT Devices",
+			key: "iot-devices",
+			icon: <Icon fontSize="small">devices</Icon>,
+			route: "/iot-devices",
+			component: <ProtectedComponent component={<IoTDevices />} />,
+			protected: true,
+		},
+		{
+			key: "register-device",
+			route: "/iot-devices/register",
+			component: <ProtectedComponent component={<RegisterDevice />} />,
+			protected: true,
+		},
+		{
+			key: "device-details",
+			route: "/iot-devices/:deviceId",
+			component: <ProtectedComponent component={<DeviceDetails />} />,
+			protected: true,
+		},
+		{
+			key: "telemetry-dashboard",
+			route: "/iot-devices/:deviceId/telemetry",
+			component: <ProtectedComponent component={<TelemetryDashboard />} />,
+			protected: true,
+		},
+		{
+			key: "command-center",
+			route: "/iot-devices/:deviceId/commands",
+			component: <ProtectedComponent component={<CommandCenter />} />,
+			protected: true,
+		},
+		{
+			key: "fleet-analytics",
+			route: "/iot-devices/fleet/analytics",
+			component: <ProtectedComponent component={<FleetAnalytics />} />,
+			protected: true,
+		},
+		{
+			key: "firmware-management",
+			route: "/iot-devices/firmware/management",
+			component: <ProtectedComponent component={<FirmwareManagement />} />,
 			protected: true,
 		},
 

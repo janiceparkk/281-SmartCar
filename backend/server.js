@@ -17,6 +17,9 @@ const deviceRouter = require("./routes/deviceRoutes");
 const serviceRequestRouter = require("./routes/serviceRequestRoutes");
 const userRoutes = require("./routes/userRoutes");
 
+// Import Services
+const mqttService = require("./services/mqttService");
+
 const app = express();
 
 // --- Session Configuration ---
@@ -147,11 +150,11 @@ const pgPool = new Pool({
 pgPool
 	.connect()
 	.then((client) => {
-		console.log("✅ Connected to PostgreSQL successfully.");
+		console.log("Connected to PostgreSQL successfully.");
 		client.release();
 	})
 	.catch((err) => {
-		console.error("❌ Failed to connect to PostgreSQL:", err.message);
+		console.error("Failed to connect to PostgreSQL:", err.message);
 	});
 
 mongoose
@@ -196,7 +199,7 @@ wss.on("connection", (ws, req) => {
 });
 
 // --- Start Server ---
-server.listen(PORT, () => {
+server.listen(PORT, async () => {
 	console.log(`\n--- Smart Car Backend Running ---`);
 	console.log(`REST API running on http://localhost:${PORT}`);
 	console.log(`WebSocket Server running on ws://localhost:${PORT}`);
@@ -204,4 +207,13 @@ server.listen(PORT, () => {
 	console.log(
 		`PostgreSQL DB: ${process.env.PG_DATABASE} on port ${process.env.PG_PORT}`
 	);
+
+	// Initialize MQTT Service
+	try {
+		await mqttService.initialize();
+		console.log(`MQTT Service initialized`);
+	} catch (error) {
+		console.error(`MQTT Service initialization failed:`, error.message);
+		console.log(`(Server will continue without MQTT support)`);
+	}
 });
