@@ -1,5 +1,26 @@
 const { pgPool } = require("../config/database");
 const crypto = require("crypto");
+const { updateHeartbeat } = require("../services/connectionTracker");
+const {
+	storeTelemetry,
+	getTelemetry,
+	updateTelemetrySummary,
+} = require("../services/telemetryService");
+const {
+	createCommand,
+	getCommandStatus,
+} = require("../services/commandProcessor");
+const {
+	getFirmwareVersions,
+	createFirmwareVersion,
+	initiateFirmwareUpdate,
+} = require("../services/firmwareService");
+const {
+	getFleetHealth,
+	getFleetAnalytics,
+	getFleetMap,
+	getDeviceDiagnostics,
+} = require("../services/fleetAnalytics");
 
 /**
  * Register a new IoT device
@@ -65,9 +86,7 @@ async function registerDevice(data) {
 		// Generate MQTT credentials using the auto-generated device_id
 		const mqttCredentials = generateMQTTCredentials(deviceId);
 
-		console.log(
-			`[Device Manager] Registered device: ${deviceId} for car: ${carId}`
-		);
+		console.log(`[Device Manager] Registered device: ${deviceId} for car: ${carId}`);
 
 		return {
 			device: registeredDevice,
@@ -165,9 +184,7 @@ async function getDevices(params) {
 
 		const result = await pgPool.query(query, queryParams);
 
-		console.log(
-			`[Device Manager] Retrieved ${result.rows.length} devices for ${userRole}`
-		);
+		console.log(`[Device Manager] Retrieved ${result.rows.length} devices for ${userRole}`);
 
 		return result.rows;
 	} catch (error) {
@@ -177,8 +194,8 @@ async function getDevices(params) {
 }
 
 /**
- * Get active devices for admins
- * @returns {Array} - List of devices
+ * Get active devices
+ * @returns {Array} - List of active devices
  */
 async function getActiveDevices() {
 	try {
@@ -265,13 +282,461 @@ async function getDeviceById(params) {
 			return null;
 		}
 
-		console.log(
-			`[Device Manager] Retrieved device ${deviceId} for ${userRole}`
-		);
+		console.log(`[Device Manager] Retrieved device ${deviceId} for ${userRole}`);
 
 		return result.rows[0];
 	} catch (error) {
 		console.error("Error in getDeviceById:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Get device connection status and recent activity
+ * @param {Object} params - Query parameters
+ * @returns {Object} - Device status information
+ */
+async function getDeviceStatus(params) {
+	const { deviceId, userRole, userId } = params;
+
+	try {
+		// First check if device exists and user has access
+		let deviceQuery = `
+			SELECT d.*, c.user_id as car_owner_id
+			FROM iot_devices d
+			LEFT JOIN smart_cars c ON d.car_id = c.car_id
+			WHERE d.device_id = $1
+		`;
+
+		const deviceParams = [deviceId];
+
+		if (userRole === "CarOwner") {
+			deviceQuery += ` AND c.user_id = $2`;
+			deviceParams.push(userId);
+		}
+
+		const deviceResult = await pgPool.query(deviceQuery, deviceParams);
+
+		if (deviceResult.rows.length === 0) {
+			return null;
+		}
+
+		const device = deviceResult.rows[0];
+
+		// Get recent connection history
+		const connectionsResult = await pgPool.query(
+			`SELECT * FROM device_connections
+			WHERE device_id = $1
+			ORDER BY connected_at DESC
+			LIMIT 10`,
+			[deviceId]
+		);
+
+		console.log(`[Device Manager] Retrieved status for device ${deviceId}`);
+
+		return {
+			device_id: device.device_id,
+			status: device.status,
+			last_heartbeat: device.last_heartbeat,
+			connection_history: connectionsResult.rows,
+		};
+	} catch (error) {
+		console.error("Error in getDeviceStatus:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Update device heartbeat timestamp
+ * @param {Object} params - Parameters
+ * @returns {Object} - Updated device
+ */
+async function updateDeviceHeartbeat(params) {
+	const { deviceId, userRole, userId } = params;
+
+	try {
+		// Verify device exists and user has access
+		let deviceQuery = `
+			SELECT d.device_id, c.user_id as car_owner_id
+			FROM iot_devices d
+			LEFT JOIN smart_cars c ON d.car_id = c.car_id
+			WHERE d.device_id = $1
+		`;
+
+		const deviceParams = [deviceId];
+
+		if (userRole === "CarOwner") {
+			deviceQuery += ` AND c.user_id = $2`;
+			deviceParams.push(userId);
+		}
+
+		const deviceResult = await pgPool.query(deviceQuery, deviceParams);
+
+		if (deviceResult.rows.length === 0) {
+			return null;
+		}
+
+		// Update the heartbeat
+		const updatedDevice = await updateHeartbeat(deviceId);
+
+		return updatedDevice;
+	} catch (error) {
+		console.error("Error in updateDeviceHeartbeat:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Submit telemetry data for a device
+ * @param {Object} params - Parameters including deviceId and telemetry data
+ * @returns {Object} - Stored telemetry record
+ */
+async function submitTelemetry(params) {
+	const { deviceId, userRole, userId, telemetryData } = params;
+
+	try {
+		// Verify device exists and user has access
+		let deviceQuery = `
+			SELECT d.device_id, c.user_id as car_owner_id
+			FROM iot_devices d
+			LEFT JOIN smart_cars c ON d.car_id = c.car_id
+			WHERE d.device_id = $1
+		`;
+
+		const deviceParams = [deviceId];
+
+		if (userRole === "CarOwner") {
+			deviceQuery += ` AND c.user_id = $2`;
+			deviceParams.push(userId);
+		}
+
+		const deviceResult = await pgPool.query(deviceQuery, deviceParams);
+
+		if (deviceResult.rows.length === 0) {
+			return null;
+		}
+
+		// Store the telemetry data
+		const telemetry = await storeTelemetry(deviceId, telemetryData);
+
+		// Update telemetry summary asynchronously (don't wait for it)
+		updateTelemetrySummary(deviceId).catch((err) => {
+			console.error(`Error updating telemetry summary for device ${deviceId}:`, err.message);
+		});
+
+		return telemetry;
+	} catch (error) {
+		console.error("Error in submitTelemetry:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Get telemetry data for a device
+ * @param {Object} params - Parameters including deviceId and query options
+ * @returns {Array} - Telemetry records
+ */
+async function getDeviceTelemetry(params) {
+	const { deviceId, userRole, userId, options } = params;
+
+	try {
+		// Verify device exists and user has access
+		let deviceQuery = `
+			SELECT d.device_id, c.user_id as car_owner_id
+			FROM iot_devices d
+			LEFT JOIN smart_cars c ON d.car_id = c.car_id
+			WHERE d.device_id = $1
+		`;
+
+		const deviceParams = [deviceId];
+
+		if (userRole === "CarOwner") {
+			deviceQuery += ` AND c.user_id = $2`;
+			deviceParams.push(userId);
+		}
+
+		const deviceResult = await pgPool.query(deviceQuery, deviceParams);
+
+		if (deviceResult.rows.length === 0) {
+			return null;
+		}
+
+		// Get telemetry data
+		const telemetry = await getTelemetry(deviceId, options);
+
+		return telemetry;
+	} catch (error) {
+		console.error("Error in getDeviceTelemetry:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Send a command to a device
+ * @param {Object} params - Parameters including deviceId and command data
+ * @returns {Object} - Created command record
+ */
+async function sendDeviceCommand(params) {
+	const { deviceId, userRole, userId, commandData } = params;
+
+	try {
+		// Verify device exists and user has access
+		let deviceQuery = `
+			SELECT d.device_id, d.status, c.user_id as car_owner_id
+			FROM iot_devices d
+			LEFT JOIN smart_cars c ON d.car_id = c.car_id
+			WHERE d.device_id = $1
+		`;
+
+		const deviceParams = [deviceId];
+
+		if (userRole === "CarOwner") {
+			deviceQuery += ` AND c.user_id = $2`;
+			deviceParams.push(userId);
+		}
+
+		const deviceResult = await pgPool.query(deviceQuery, deviceParams);
+
+		if (deviceResult.rows.length === 0) {
+			return null;
+		}
+
+		const device = deviceResult.rows[0];
+
+		// Check if device is online (optional warning, not blocking)
+		if (device.status === "offline") {
+			console.warn(
+				`[Device Manager] Warning: Sending command to offline device ${deviceId}`
+			);
+		}
+
+		// Create the command
+		const command = await createCommand(deviceId, commandData);
+
+		return command;
+	} catch (error) {
+		console.error("Error in sendDeviceCommand:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Get command status by command ID
+ * @param {Object} params - Parameters including commandId
+ * @returns {Object|null} - Command record or null
+ */
+async function getDeviceCommandStatus(params) {
+	const { deviceId, commandId, userRole, userId } = params;
+
+	try {
+		// Verify device exists and user has access
+		let deviceQuery = `
+			SELECT d.device_id, c.user_id as car_owner_id
+			FROM iot_devices d
+			LEFT JOIN smart_cars c ON d.car_id = c.car_id
+			WHERE d.device_id = $1
+		`;
+
+		const deviceParams = [deviceId];
+
+		if (userRole === "CarOwner") {
+			deviceQuery += ` AND c.user_id = $2`;
+			deviceParams.push(userId);
+		}
+
+		const deviceResult = await pgPool.query(deviceQuery, deviceParams);
+
+		if (deviceResult.rows.length === 0) {
+			return null;
+		}
+
+		// Get command status
+		const command = await getCommandStatus(commandId);
+
+		// Verify command belongs to the device
+		if (command && command.device_id !== deviceId) {
+			return null; // Command doesn't belong to this device
+		}
+
+		return command;
+	} catch (error) {
+		console.error("Error in getDeviceCommandStatus:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Get all firmware versions
+ * @param {Object} params - Parameters including filters
+ * @returns {Array} - List of firmware versions
+ */
+async function getAllFirmwareVersions(params) {
+	const { device_type } = params;
+
+	try {
+		const filters = {};
+
+		if (device_type) {
+			filters.device_type = device_type;
+		}
+
+		const firmwareVersions = await getFirmwareVersions(filters);
+
+		return firmwareVersions;
+	} catch (error) {
+		console.error("Error in getAllFirmwareVersions:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Create a new firmware version (Admin only)
+ * @param {Object} params - Parameters including firmware data
+ * @returns {Object} - Created firmware version
+ */
+async function addFirmwareVersion(params) {
+	const { firmwareData } = params;
+
+	try {
+		const firmware = await createFirmwareVersion(firmwareData);
+
+		return firmware;
+	} catch (error) {
+		console.error("Error in addFirmwareVersion:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Update device firmware
+ * @param {Object} params - Parameters including deviceId and target version
+ * @returns {Object} - Update result
+ */
+async function updateDeviceFirmware(params) {
+	const { deviceId, userRole, userId, targetVersion } = params;
+
+	try {
+		// Verify device exists and user has access
+		let deviceQuery = `
+			SELECT d.device_id, c.user_id as car_owner_id
+			FROM iot_devices d
+			LEFT JOIN smart_cars c ON d.car_id = c.car_id
+			WHERE d.device_id = $1
+		`;
+
+		const deviceParams = [deviceId];
+
+		if (userRole === "CarOwner") {
+			deviceQuery += ` AND c.user_id = $2`;
+			deviceParams.push(userId);
+		}
+
+		const deviceResult = await pgPool.query(deviceQuery, deviceParams);
+
+		if (deviceResult.rows.length === 0) {
+			return null;
+		}
+
+		// Initiate firmware update
+		const updateResult = await initiateFirmwareUpdate(deviceId, targetVersion);
+
+		return updateResult;
+	} catch (error) {
+		console.error("Error in updateDeviceFirmware:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Get fleet health overview
+ * @param {Object} params - Parameters including user info
+ * @returns {Object} - Fleet health statistics
+ */
+async function getFleetHealthOverview(params) {
+	const { userRole, userId } = params;
+
+	try {
+		const health = await getFleetHealth(userId, userRole);
+
+		return health;
+	} catch (error) {
+		console.error("Error in getFleetHealthOverview:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Get fleet analytics and insights
+ * @param {Object} params - Parameters including user info
+ * @returns {Object} - Fleet analytics
+ */
+async function getFleetAnalyticsData(params) {
+	const { userRole, userId } = params;
+
+	try {
+		const analytics = await getFleetAnalytics(userId, userRole);
+
+		return analytics;
+	} catch (error) {
+		console.error("Error in getFleetAnalyticsData:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Get fleet map data
+ * @param {Object} params - Parameters including user info
+ * @returns {Array} - Fleet map data
+ */
+async function getFleetMapData(params) {
+	const { userRole, userId } = params;
+
+	try {
+		const mapData = await getFleetMap(userId, userRole);
+
+		return mapData;
+	} catch (error) {
+		console.error("Error in getFleetMapData:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Get device diagnostics
+ * @param {Object} params - Parameters including deviceId and user info
+ * @returns {Object|null} - Device diagnostics or null
+ */
+async function getDeviceDiagnosticsData(params) {
+	const { deviceId, userRole, userId } = params;
+
+	try {
+		// Verify device exists and user has access
+		let deviceQuery = `
+			SELECT d.device_id, c.user_id as car_owner_id
+			FROM iot_devices d
+			LEFT JOIN smart_cars c ON d.car_id = c.car_id
+			WHERE d.device_id = $1
+		`;
+
+		const deviceParams = [deviceId];
+
+		if (userRole === "CarOwner") {
+			deviceQuery += ` AND c.user_id = $2`;
+			deviceParams.push(userId);
+		}
+
+		const deviceResult = await pgPool.query(deviceQuery, deviceParams);
+
+		if (deviceResult.rows.length === 0) {
+			return null;
+		}
+
+		// Get diagnostics
+		const diagnostics = await getDeviceDiagnostics(deviceId);
+
+		return diagnostics;
+	} catch (error) {
+		console.error("Error in getDeviceDiagnosticsData:", error.message);
 		throw error;
 	}
 }
@@ -329,5 +794,18 @@ module.exports = {
 	getDevices,
 	getActiveDevices,
 	getDeviceById,
+	getDeviceStatus,
+	updateDeviceHeartbeat,
+	submitTelemetry,
+	getDeviceTelemetry,
+	sendDeviceCommand,
+	getDeviceCommandStatus,
+	getAllFirmwareVersions,
+	addFirmwareVersion,
+	updateDeviceFirmware,
+	getFleetHealthOverview,
+	getFleetAnalyticsData,
+	getFleetMapData,
+	getDeviceDiagnosticsData,
 	updateDevice,
 };
