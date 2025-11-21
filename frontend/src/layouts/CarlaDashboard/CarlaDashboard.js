@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import { useParams } from "react-router-dom";
 import {
 	Box,
 	Grid,
@@ -35,10 +36,10 @@ import {
 	Delete as DeleteIcon,
 } from "@mui/icons-material";
 
-// CARLA Bridge Configuration
-
+// API Configuration
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
 const CARLA_BRIDGE_URL =
-	process.env.REACT_APP_API_URL || "http://localhost:5001";
+	process.env.REACT_APP_CARLA_BRIDGE_URL || "http://localhost:5001";
 
 const CARLA_MODELS = [
 	{ label: "Tesla Model 3", value: "vehicle.tesla.model3" },
@@ -48,6 +49,7 @@ const CARLA_MODELS = [
 	{ label: "Bicycle", value: "vehicle.bh.crossbike" },
 ];
 const CarlaDashboard = () => {
+	const { carId } = useParams(); // Get carId from URL params
 	const [cars, setCars] = useState([]);
 	const [selectedCar, setSelectedCar] = useState(null);
 	const [telemetryData, setTelemetryData] = useState({});
@@ -65,6 +67,10 @@ const CarlaDashboard = () => {
 		severity: "success",
 	});
 	const videoRefs = useRef({});
+
+	const getAuthToken = () => {
+		return localStorage.getItem("token");
+	};
 
 	const testConnection = async () => {
 		try {
@@ -84,30 +90,74 @@ const CarlaDashboard = () => {
 		return false;
 	};
 
-	// Fetch car list and manage selection
+	// Fetch car list and manage selection - now user-based
 	const fetchCarList = async () => {
 		try {
 			setError(null);
 
+			const token = getAuthToken();
+			if (!token) {
+				setError("Authentication required. Please log in.");
+				setConnectionStatus("error");
+				return;
+			}
+
+			// Test CARLA bridge connection first
 			const isConnected = await testConnection();
 			if (!isConnected) return;
 
-			const response = await fetch(`${CARLA_BRIDGE_URL}/car-list`);
-			if (!response.ok)
+			// Fetch user's cars from backend API (which maps with CARLA)
+			const response = await fetch(`${API_URL}/api/cars/carla`, {
+				method: "GET",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${token}`,
+				},
+			});
+
+			if (!response.ok) {
+				if (response.status === 401) {
+					setError("Authentication failed. Please log in again.");
+					setConnectionStatus("error");
+					return;
+				}
 				throw new Error(
 					`HTTP ${response.status}: ${response.statusText}`
 				);
+			}
 
 			const carList = await response.json();
-			setCars(carList);
+			// Extract carla_car_id from each car object for compatibility
+			const carlaCarIds = carList.map(
+				(car) => car.carla_car_id || car.license_plate
+			);
+			setCars(carList); // Store full car objects
 
-			// *** FIXED SELECTION LOGIC ***
+			// *** FIXED SELECTION LOGIC WITH URL PARAM SUPPORT ***
 			if (carList.length > 0) {
-				// If current selection is valid, keep it.
-				if (selectedCar && carList.includes(selectedCar)) {
+				// Priority 1: If carId is provided in URL, try to select that car
+				if (carId) {
+					const carFromUrl = carList.find(
+						(car) =>
+							car.license_plate === carId ||
+							car.carla_car_id === carId ||
+							car.car_id?.toString() === carId
+					);
+					if (carFromUrl) {
+						setSelectedCar(carFromUrl);
+						return; // Exit early if we found the car from URL
+					}
+				}
+
+				// Priority 2: If current selection is valid, keep it.
+				const currentCarId =
+					selectedCar?.carla_car_id ||
+					selectedCar?.license_plate ||
+					selectedCar;
+				if (selectedCar && carlaCarIds.includes(currentCarId)) {
 					// Selection preserved.
 				} else {
-					// Auto-select the first car if none selected or the selected one was removed.
+					// Priority 3: Auto-select the first car if none selected or the selected one was removed.
 					setSelectedCar(carList[0]);
 				}
 			} else {
@@ -122,17 +172,22 @@ const CarlaDashboard = () => {
 	};
 
 	// Fetch telemetry data for selected car
-	const fetchTelemetry = async (carId) => {
+	const fetchTelemetry = async (car) => {
 		try {
+			// Get CARLA car_id from car object
+			const carlaCarId = car?.carla_car_id || car?.license_plate || car;
+			if (!carlaCarId) return;
+
 			const response = await fetch(
-				`${CARLA_BRIDGE_URL}/telemetry/${carId}`
+				`${CARLA_BRIDGE_URL}/telemetry/${carlaCarId}`
 			);
 			if (!response.ok) return;
 
 			const data = await response.json();
+			// Use carla_car_id as key for telemetry data
 			setTelemetryData((prev) => ({
 				...prev,
-				[carId]: data.telemetry,
+				[carlaCarId]: data.telemetry,
 			}));
 		} catch (error) {
 			// silent fail for polling
@@ -140,10 +195,14 @@ const CarlaDashboard = () => {
 	};
 
 	// Set up video stream
-	const setupVideoStream = (carId) => {
-		const videoElement = videoRefs.current[carId];
+	const setupVideoStream = (car) => {
+		// Get CARLA car_id from car object
+		const carlaCarId = car?.carla_car_id || car?.license_plate || car;
+		if (!carlaCarId) return;
+
+		const videoElement = videoRefs.current[carlaCarId];
 		if (videoElement) {
-			videoElement.src = `${CARLA_BRIDGE_URL}/video-stream/${carId}`;
+			videoElement.src = `${CARLA_BRIDGE_URL}/video-stream/${carlaCarId}`;
 		}
 	};
 
@@ -167,8 +226,17 @@ const CarlaDashboard = () => {
 		}
 
 		try {
-			// 💡 UPDATED JSON BODY TO INCLUDE LOCATION
-			const response = await fetch(`${CARLA_BRIDGE_URL}/add-car`, {
+			const token = getAuthToken();
+			if (!token) {
+				showSnackbar(
+					"Authentication required. Please log in.",
+					"error"
+				);
+				return;
+			}
+
+			// First, add car to CARLA bridge
+			const carlaResponse = await fetch(`${CARLA_BRIDGE_URL}/add-car`, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -181,13 +249,39 @@ const CarlaDashboard = () => {
 				}),
 			});
 
-			if (!response.ok) {
-				const errorData = await response.json();
-				throw new Error(errorData.error || `HTTP ${response.status}`);
+			if (!carlaResponse.ok) {
+				const errorData = await carlaResponse.json();
+				throw new Error(
+					errorData.error || `HTTP ${carlaResponse.status}`
+				);
 			}
 
-			const result = await response.json();
-			showSnackbar(result.message, "success");
+			// Then, register the car in PostgreSQL with license_plate set to CARLA car_id
+			const dbResponse = await fetch(`${API_URL}/api/cars`, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${token}`,
+				},
+				body: JSON.stringify({
+					model: newCarModel.trim(),
+					license_plate: newCarId.trim(), // Use license_plate to store CARLA car_id
+					status: "active",
+				}),
+			});
+
+			if (!dbResponse.ok) {
+				// If DB registration fails, we still have the car in CARLA
+				// but warn the user
+				const errorData = await dbResponse.json();
+				showSnackbar(
+					`Car added to CARLA but database registration failed: ${errorData.message}`,
+					"warning"
+				);
+			} else {
+				showSnackbar("Car added successfully", "success");
+			}
+
 			setAddCarDialogOpen(false);
 
 			// Reset fields
@@ -203,22 +297,31 @@ const CarlaDashboard = () => {
 	};
 
 	// Remove car
-	const removeCar = async (carId) => {
+	const removeCar = async (car) => {
 		try {
-			const response = await fetch(
-				`${CARLA_BRIDGE_URL}/remove-car/${carId}`,
+			// Get CARLA car_id from car object
+			const carlaCarId = car?.carla_car_id || car?.license_plate || car;
+			if (!carlaCarId) {
+				showSnackbar("Invalid car identifier", "error");
+				return;
+			}
+
+			// Remove from CARLA bridge
+			const carlaResponse = await fetch(
+				`${CARLA_BRIDGE_URL}/remove-car/${carlaCarId}`,
 				{
 					method: "POST",
 				}
 			);
 
-			if (!response.ok) {
-				const errorData = await response.json();
-				throw new Error(errorData.error || `HTTP ${response.status}`);
+			if (!carlaResponse.ok) {
+				const errorData = await carlaResponse.json();
+				throw new Error(
+					errorData.error || `HTTP ${carlaResponse.status}`
+				);
 			}
 
-			const result = await response.json();
-			showSnackbar(result.message, "success");
+			showSnackbar("Car removed from CARLA successfully", "success");
 
 			// Refresh car list
 			setTimeout(fetchCarList, 1000);
@@ -240,7 +343,7 @@ const CarlaDashboard = () => {
 		return () => {
 			clearInterval(carListInterval);
 		};
-	}, [selectedCar]); // Include selectedCar to ensure the latest value is used in fetchCarList closure
+	}, [selectedCar, carId]); // Include selectedCar and carId to re-fetch when URL param changes
 
 	useEffect(() => {
 		let telemetryInterval;
@@ -356,106 +459,125 @@ const CarlaDashboard = () => {
 				<CardContent>
 					{cars.length > 0 ? (
 						<Box sx={{ display: "flex", gap: 2, flexWrap: "wrap" }}>
-							{cars.map((car) => (
-								<Card
-									key={car}
-									sx={{
-										minWidth: 200,
-										cursor: "pointer",
-										border: selectedCar === car ? 2 : 1,
-										borderColor:
-											selectedCar === car
+							{cars.map((car) => {
+								const carlaCarId =
+									car.carla_car_id || car.license_plate;
+								const carDisplayName =
+									car.model ||
+									car.license_plate ||
+									carlaCarId ||
+									"Unknown Car";
+								const isSelected =
+									selectedCar?.car_id === car.car_id ||
+									selectedCar?.carla_car_id === carlaCarId ||
+									selectedCar?.license_plate ===
+										car.license_plate;
+
+								return (
+									<Card
+										key={car.car_id || carlaCarId}
+										sx={{
+											minWidth: 200,
+											cursor: "pointer",
+											border: isSelected ? 2 : 1,
+											borderColor: isSelected
 												? "primary.main"
 												: "divider",
-										"&:hover": {
-											boxShadow: 2,
-										},
-									}}
-									onClick={() => setSelectedCar(car)}
-								>
-									<CardContent>
-										<Box
-											sx={{
-												display: "flex",
-												alignItems: "center",
-												mb: 2,
-											}}
-										>
-											<Avatar
+											"&:hover": {
+												boxShadow: 2,
+											},
+										}}
+										onClick={() => setSelectedCar(car)}
+									>
+										<CardContent>
+											<Box
 												sx={{
-													bgcolor: "primary.main",
-													mr: 2,
+													display: "flex",
+													alignItems: "center",
+													mb: 2,
 												}}
 											>
-												<CarIcon />
-											</Avatar>
-											<Box sx={{ flexGrow: 1 }}>
-												<Typography variant="h6">
-													{car}
-												</Typography>
-												<Typography
-													variant="body2"
-													color="textSecondary"
-												>
-													Speed:{" "}
-													{telemetryData[car]
-														?.speed || 0}{" "}
-													km/h
-												</Typography>
-											</Box>
-											<Tooltip title="Remove Car">
-												<IconButton
-													size="small"
-													onClick={(e) => {
-														e.stopPropagation();
-														removeCar(car);
+												<Avatar
+													sx={{
+														bgcolor: "primary.main",
+														mr: 2,
 													}}
-													color="error"
 												>
-													<DeleteIcon />
-												</IconButton>
-											</Tooltip>
-										</Box>
-										<Box sx={{ display: "flex", gap: 1 }}>
-											<Chip
-												label={getStatusText(
-													telemetryData[car]?.speed ||
-														0
-												)}
-												color={getStatusColor(
-													telemetryData[car]?.speed ||
-														0
-												)}
-												size="small"
-											/>
-											<Button
-												size="small"
-												variant={"contained"}
-												color="primary"
-												onClick={() =>
-													setSelectedCar(car)
-												}
-												sx={{
-													color: "#000000",
-
-													...(selectedCar === car && {
-														backgroundColor:
-															"primary.main",
-														"&:hover": {
-															backgroundColor:
-																"primary.dark",
-														},
-													}),
-												}}
+													<CarIcon />
+												</Avatar>
+												<Box sx={{ flexGrow: 1 }}>
+													<Typography variant="h6">
+														{carDisplayName}
+													</Typography>
+													<Typography
+														variant="body2"
+														color="textSecondary"
+													>
+														Speed:{" "}
+														{telemetryData[
+															carlaCarId
+														]?.speed || 0}{" "}
+														km/h
+													</Typography>
+												</Box>
+												<Tooltip title="Remove Car">
+													<IconButton
+														size="small"
+														onClick={(e) => {
+															e.stopPropagation();
+															removeCar(car);
+														}}
+														color="error"
+													>
+														<DeleteIcon />
+													</IconButton>
+												</Tooltip>
+											</Box>
+											<Box
+												sx={{ display: "flex", gap: 1 }}
 											>
-												{selectedCar === car
-													? "Selected"
-													: "Select"}
-											</Button>
-										</Box>
-									</CardContent>
-								</Card>
-							))}
+												<Chip
+													label={getStatusText(
+														telemetryData[
+															carlaCarId
+														]?.speed || 0
+													)}
+													color={getStatusColor(
+														telemetryData[
+															carlaCarId
+														]?.speed || 0
+													)}
+													size="small"
+												/>
+												<Button
+													size="small"
+													variant={"contained"}
+													color="primary"
+													onClick={() =>
+														setSelectedCar(car)
+													}
+													sx={{
+														color: "#000000",
+
+														...(isSelected && {
+															backgroundColor:
+																"primary.main",
+															"&:hover": {
+																backgroundColor:
+																	"primary.dark",
+															},
+														}),
+													}}
+												>
+													{isSelected
+														? "Selected"
+														: "Select"}
+												</Button>
+											</Box>
+										</CardContent>
+									</Card>
+								);
+							})}
 						</Box>
 					) : (
 						<Box sx={{ textAlign: "center", py: 4 }}>
@@ -481,244 +603,255 @@ const CarlaDashboard = () => {
 				</CardContent>
 			</Card>
 
-			{selectedCar && (
-				<Grid container spacing={3}>
-					{/* Video Stream */}
-					<Grid item xs={12} md={8}>
-						<Card sx={{ height: "100%" }}>
-							<CardHeader
-								title={`Live Camera Feed - ${selectedCar}`}
-								action={
-									<Chip
-										label="LIVE"
-										color="error"
-										size="small"
-									/>
-								}
-							/>
-							<CardContent>
-								<Box
-									sx={{
-										position: "relative",
-										width: "100%",
-										height: "400px",
-										bgcolor: "black",
-										borderRadius: 1,
-										overflow: "hidden",
-										display: "flex",
-										alignItems: "center",
-										justifyContent: "center",
-									}}
-								>
-									<img
-										ref={(el) =>
-											(videoRefs.current[selectedCar] =
-												el)
+			{selectedCar &&
+				(() => {
+					const carlaCarId =
+						selectedCar?.carla_car_id ||
+						selectedCar?.license_plate ||
+						selectedCar;
+					const carDisplayName =
+						selectedCar?.model ||
+						selectedCar?.license_plate ||
+						carlaCarId ||
+						"Unknown Car";
+					const telemetry = telemetryData[carlaCarId];
+
+					return (
+						<Grid container spacing={3}>
+							{/* Video Stream */}
+							<Grid item xs={12} md={8}>
+								<Card sx={{ height: "100%" }}>
+									<CardHeader
+										title={`Live Camera Feed - ${carDisplayName}`}
+										action={
+											<Chip
+												label="LIVE"
+												color="error"
+												size="small"
+											/>
 										}
-										alt={`Live feed from ${selectedCar}`}
-										style={{
-											width: "100%",
-											height: "100%",
-											objectFit: "cover",
-										}}
-										onError={() => {
-											// Handle image load error silently or with a placeholder
-										}}
 									/>
-									{!telemetryData[selectedCar] && (
-										<Typography
-											position="absolute"
-											color="white"
-											variant="h6"
+									<CardContent>
+										<Box
+											sx={{
+												position: "relative",
+												width: "100%",
+												height: "400px",
+												bgcolor: "black",
+												borderRadius: 1,
+												overflow: "hidden",
+												display: "flex",
+												alignItems: "center",
+												justifyContent: "center",
+											}}
 										>
-											Waiting for video stream from{" "}
-											{selectedCar}...
-										</Typography>
-									)}
-								</Box>
-							</CardContent>
-						</Card>
-					</Grid>
+											<img
+												ref={(el) =>
+													(videoRefs.current[
+														carlaCarId
+													] = el)
+												}
+												alt={`Live feed from ${carDisplayName}`}
+												style={{
+													width: "100%",
+													height: "100%",
+													objectFit: "cover",
+												}}
+												onError={() => {
+													// Handle image load error silently or with a placeholder
+												}}
+											/>
+											{!telemetry && (
+												<Typography
+													position="absolute"
+													color="white"
+													variant="h6"
+												>
+													Waiting for video stream
+													from {carDisplayName}...
+												</Typography>
+											)}
+										</Box>
+									</CardContent>
+								</Card>
+							</Grid>
 
-					{/* Telemetry Data */}
-					<Grid item xs={12} md={4}>
-						<Card sx={{ mb: 3 }}>
-							<CardHeader
-								title="Vehicle Telemetry"
-								action={
-									<Chip
-										label={getStatusText(
-											telemetryData[selectedCar]?.speed ||
-												0
-										)}
-										color={getStatusColor(
-											telemetryData[selectedCar]?.speed ||
-												0
-										)}
+							{/* Telemetry Data */}
+							<Grid item xs={12} md={4}>
+								<Card sx={{ mb: 3 }}>
+									<CardHeader
+										title="Vehicle Telemetry"
+										action={
+											<Chip
+												label={getStatusText(
+													telemetry?.speed || 0
+												)}
+												color={getStatusColor(
+													telemetry?.speed || 0
+												)}
+											/>
+										}
 									/>
-								}
-							/>
-							<CardContent>
-								<Box sx={{ mb: 3 }}>
-									<Box
-										sx={{
-											display: "flex",
-											alignItems: "center",
-											mb: 1,
-										}}
-									>
-										<SpeedIcon
-											color="primary"
-											sx={{ mr: 1 }}
-										/>
-										<Typography
-											variant="body2"
-											color="textSecondary"
-										>
-											Current Speed
-										</Typography>
-									</Box>
-									<Typography
-										variant="h4"
-										color="primary"
-										gutterBottom
-									>
-										{telemetryData[selectedCar]?.speed || 0}{" "}
-										km/h
-									</Typography>
-									<LinearProgress
-										variant="determinate"
-										value={Math.min(
-											((telemetryData[selectedCar]
-												?.speed || 0) /
-												100) *
-												100,
-											100
-										)}
-										sx={{
-											height: 8,
-											borderRadius: 4,
-											mb: 1,
-										}}
-									/>
-								</Box>
+									<CardContent>
+										<Box sx={{ mb: 3 }}>
+											<Box
+												sx={{
+													display: "flex",
+													alignItems: "center",
+													mb: 1,
+												}}
+											>
+												<SpeedIcon
+													color="primary"
+													sx={{ mr: 1 }}
+												/>
+												<Typography
+													variant="body2"
+													color="textSecondary"
+												>
+													Current Speed
+												</Typography>
+											</Box>
+											<Typography
+												variant="h4"
+												color="primary"
+												gutterBottom
+											>
+												{telemetry?.speed || 0} km/h
+											</Typography>
+											<LinearProgress
+												variant="determinate"
+												value={Math.min(
+													((telemetry?.speed || 0) /
+														100) *
+														100,
+													100
+												)}
+												sx={{
+													height: 8,
+													borderRadius: 4,
+													mb: 1,
+												}}
+											/>
+										</Box>
 
-								<Box sx={{ mb: 2 }}>
-									<Box
-										sx={{
-											display: "flex",
-											alignItems: "center",
-											mb: 1,
-										}}
-									>
-										<LocationIcon
-											color="secondary"
-											sx={{ mr: 1 }}
-										/>
-										<Typography
-											variant="body2"
-											color="textSecondary"
-										>
-											Location Coordinates
-										</Typography>
-									</Box>
-									<Grid container spacing={2}>
-										<Grid item xs={6}>
+										<Box sx={{ mb: 2 }}>
+											<Box
+												sx={{
+													display: "flex",
+													alignItems: "center",
+													mb: 1,
+												}}
+											>
+												<LocationIcon
+													color="secondary"
+													sx={{ mr: 1 }}
+												/>
+												<Typography
+													variant="body2"
+													color="textSecondary"
+												>
+													Location Coordinates
+												</Typography>
+											</Box>
+											<Grid container spacing={2}>
+												<Grid item xs={6}>
+													<Typography
+														variant="body2"
+														color="textSecondary"
+													>
+														Latitude
+													</Typography>
+													<Typography
+														variant="h6"
+														fontFamily="monospace"
+													>
+														{telemetry?.lat?.toFixed(
+															6
+														) || "0.000000"}
+													</Typography>
+												</Grid>
+												<Grid item xs={6}>
+													<Typography
+														variant="body2"
+														color="textSecondary"
+													>
+														Longitude
+													</Typography>
+													<Typography
+														variant="h6"
+														fontFamily="monospace"
+													>
+														{telemetry?.lon?.toFixed(
+															6
+														) || "0.000000"}
+													</Typography>
+												</Grid>
+											</Grid>
+										</Box>
+
+										<Box>
 											<Typography
 												variant="body2"
 												color="textSecondary"
+												gutterBottom
 											>
-												Latitude
+												Last Updated
 											</Typography>
-											<Typography
-												variant="h6"
-												fontFamily="monospace"
-											>
-												{telemetryData[
-													selectedCar
-												]?.lat?.toFixed(6) ||
-													"0.000000"}
+											<Typography variant="body2">
+												{telemetry?.timestamp
+													? new Date(
+															telemetry.timestamp *
+																1000
+													  ).toLocaleTimeString()
+													: "Never"}
 											</Typography>
-										</Grid>
-										<Grid item xs={6}>
-											<Typography
-												variant="body2"
-												color="textSecondary"
-											>
-												Longitude
-											</Typography>
-											<Typography
-												variant="h6"
-												fontFamily="monospace"
-											>
-												{telemetryData[
-													selectedCar
-												]?.lon?.toFixed(6) ||
-													"0.000000"}
-											</Typography>
-										</Grid>
-									</Grid>
-								</Box>
+										</Box>
+									</CardContent>
+								</Card>
 
-								<Box>
-									<Typography
-										variant="body2"
-										color="textSecondary"
-										gutterBottom
-									>
-										Last Updated
-									</Typography>
-									<Typography variant="body2">
-										{telemetryData[selectedCar]?.timestamp
-											? new Date(
-													telemetryData[selectedCar]
-														.timestamp * 1000
-											  ).toLocaleTimeString()
-											: "Never"}
-									</Typography>
-								</Box>
-							</CardContent>
-						</Card>
-
-						{/* Quick Actions */}
-						<Card>
-							<CardHeader title="Quick Actions" />
-							<CardContent>
-								<Box
-									sx={{
-										display: "flex",
-										gap: 1,
-										flexWrap: "wrap",
-									}}
-								>
-									<Button
-										sx={{
-											color: "#000000",
-										}}
-										color="primary"
-										variant="contained"
-										startIcon={<RefreshIcon />}
-										onClick={fetchCarList}
-									>
-										Refresh
-									</Button>
-									<Button
-										variant="contained"
-										sx={{
-											color: "#000000",
-										}}
-										color="error"
-										startIcon={<DeleteIcon />}
-										onClick={() => removeCar(selectedCar)}
-									>
-										Remove Car
-									</Button>
-								</Box>
-							</CardContent>
-						</Card>
-					</Grid>
-				</Grid>
-			)}
+								{/* Quick Actions */}
+								<Card>
+									<CardHeader title="Quick Actions" />
+									<CardContent>
+										<Box
+											sx={{
+												display: "flex",
+												gap: 1,
+												flexWrap: "wrap",
+											}}
+										>
+											<Button
+												sx={{
+													color: "#000000",
+												}}
+												color="primary"
+												variant="contained"
+												startIcon={<RefreshIcon />}
+												onClick={fetchCarList}
+											>
+												Refresh
+											</Button>
+											<Button
+												variant="contained"
+												sx={{
+													color: "#000000",
+												}}
+												color="error"
+												startIcon={<DeleteIcon />}
+												onClick={() =>
+													removeCar(selectedCar)
+												}
+											>
+												Remove Car
+											</Button>
+										</Box>
+									</CardContent>
+								</Card>
+							</Grid>
+						</Grid>
+					);
+				})()}
 
 			{/* Add Car Dialog */}
 			<Dialog

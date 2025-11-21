@@ -228,7 +228,12 @@ export const getRoutes = () => {
 			component: <ProtectedComponent component={<CarlaDashboard />} />,
 			protected: true,
 		},
-		,
+		{
+			key: "car-config-with-id",
+			route: "/car/config/:carId",
+			component: <ProtectedComponent component={<CarlaDashboard />} />,
+			protected: true,
+		},
 	];
 
 	// If not logged in, show only public routes

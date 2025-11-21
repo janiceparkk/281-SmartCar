@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import Grid from "@mui/material/Grid";
 import Card from "@mui/material/Card";
@@ -14,6 +15,7 @@ import MDInput from "components/MDInput";
 const API_URL = process.env.REACT_APP_API_URL;
 
 function UserProfile() {
+	const navigate = useNavigate();
 	const [user, setUser] = useState(null);
 	const [cars, setCars] = useState([]);
 	const [loading, setLoading] = useState(true);
@@ -380,39 +382,68 @@ function UserProfile() {
 													borderRadius: 1,
 												}}
 											>
-												<MDTypography
-													variant="body2"
-													fontWeight="medium"
+												<MDBox
+													display="flex"
+													justifyContent="space-between"
+													alignItems="flex-start"
+													mb={1}
 												>
-													{car.make} {car.model} (
-													{car.year})
-												</MDTypography>
-												<MDTypography
-													variant="caption"
-													color="text"
-												>
-													License: {car.license_plate}{" "}
-													| Status:{" "}
-													{car.status || "Active"}
-												</MDTypography>
-												{car.vin && (
-													<MDTypography
-														variant="caption"
-														color="text"
-														display="block"
-													>
-														VIN: {car.vin}
-													</MDTypography>
-												)}
-												{car.color && (
-													<MDTypography
-														variant="caption"
-														color="text"
-														display="block"
-													>
-														Color: {car.color}
-													</MDTypography>
-												)}
+													<MDBox flex={1}>
+														<MDTypography
+															variant="body2"
+															fontWeight="medium"
+														>
+															{car.make}{" "}
+															{car.model}{" "}
+															{car.year &&
+																`(${car.year})`}
+														</MDTypography>
+														<MDTypography
+															variant="caption"
+															color="text"
+														>
+															License:{" "}
+															{car.license_plate}{" "}
+															| Status:{" "}
+															{car.status ||
+																"Active"}
+														</MDTypography>
+														{car.vin && (
+															<MDTypography
+																variant="caption"
+																color="text"
+																display="block"
+															>
+																VIN: {car.vin}
+															</MDTypography>
+														)}
+														{car.color && (
+															<MDTypography
+																variant="caption"
+																color="text"
+																display="block"
+															>
+																Color:{" "}
+																{car.color}
+															</MDTypography>
+														)}
+													</MDBox>
+													{car.license_plate && (
+														<MDButton
+															variant="gradient"
+															color="info"
+															size="small"
+															onClick={() =>
+																navigate(
+																	`/car/config/${car.license_plate}`
+																)
+															}
+															sx={{ ml: 1 }}
+														>
+															View in CARLA
+														</MDButton>
+													)}
+												</MDBox>
 											</MDBox>
 										))
 									) : (

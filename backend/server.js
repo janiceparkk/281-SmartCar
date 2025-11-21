@@ -16,6 +16,7 @@ const alertRouter = require("./routes/alertRoutes");
 const deviceRouter = require("./routes/deviceRoutes");
 const serviceRequestRouter = require("./routes/serviceRequestRoutes");
 const userRoutes = require("./routes/userRoutes");
+const aiRouter = require("./routes/aiRoutes");
 
 // Import Services
 const mqttService = require("./services/mqttService");
@@ -183,6 +184,7 @@ app.use("/api/cars", requireJWTAuth, carRouter);
 app.use("/api/devices", requireJWTAuth, deviceRouter);
 app.use("/api/serviceRequests", requireJWTAuth, serviceRequestRouter);
 app.use("/api/user", requireJWTAuth, userRoutes);
+app.use("/api/ai", aiRouter); // AI routes handle their own auth (JWT or service token)
 
 // --- Public Routes ---
 app.use("/api/auth", authRouter);

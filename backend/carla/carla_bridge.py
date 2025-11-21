@@ -10,15 +10,50 @@ import os
 import threading
 from flask import Flask, jsonify, Response, abort, request
 from flask_cors import CORS
-import argparse 
+import argparse
+import tempfile
+import wave
+import struct 
 
 # --- CONFIGURATION ---
 EXPRESS_HTTP_URL = "http://localhost:5000"
 CARLA_BRIDGE_PORT = 5001
-AUDIO_FILE_PATH = "your_dataset/acceleration_sound.mp3" 
+AUDIO_DATASET_PATH = os.getenv("AUDIO_DATASET_PATH", "backend/audio_dataset")  # Path to audio dataset directory
 NUMBER_OF_CARS = 3 
 CAR_ID_PREFIX = "CAR"
 TM_PORT_BASE = 8000 # Base port for Traffic Manager ports
+SERVICE_TOKEN = os.getenv("SERVICE_TOKEN", "carla-bridge-service-token")  # Service token for API auth
+MIN_SPEED_FOR_AUDIO = 5.0  # Minimum speed (km/h) to trigger audio processing
+AUDIO_INTERVAL = 10.0  # Interval in seconds between audio uploads when car is moving
+
+# Audio file categories mapped to dataset folder names
+# Maps internal categories to actual dataset folder names from Google Drive
+AUDIO_CATEGORY_FOLDERS = {
+    'idle': [],  # No specific folder, will search in road_traffic_dataset
+    'low_speed': ['road_traffic_dataset'],
+    'medium_speed': ['road_traffic_dataset'],
+    'high_speed': ['road_traffic_dataset'],
+    'braking': ['road_traffic_dataset'],
+    'collision': ['car_crash_dataset', 'glass_breaking_dataset'],
+    'horn': ['Alert_sounds'],
+    'siren': ['Emergency_sirens'],
+    'scream': ['Human_Scream'],  # Can be used for collision scenarios
+    'environmental': ['Environmental_Sounds'],
+}
+
+# Fallback keywords for filename matching if folder-based search fails
+AUDIO_CATEGORY_KEYWORDS = {
+    'idle': ['idle', 'stationary', 'engine_idle'],
+    'low_speed': ['acceleration', 'low_speed', 'city', 'traffic', 'urban'],
+    'medium_speed': ['cruising', 'highway', 'medium_speed', 'road'],
+    'high_speed': ['high_speed', 'fast', 'racing', 'speed'],
+    'braking': ['braking', 'deceleration', 'stop', 'brake'],
+    'collision': ['crash', 'collision', 'accident', 'break', 'glass'],
+    'horn': ['horn', 'beep', 'honk', 'alert'],
+    'siren': ['siren', 'emergency', 'ambulance', 'police', 'fire'],
+    'scream': ['scream', 'human', 'yell', 'shout'],
+    'environmental': ['environment', 'ambient', 'background'],
+}
 
 # Global flag set by command line arguments (Default is to clean up)
 CLEANUP_ON_EXIT = True 
@@ -32,16 +67,204 @@ CORS(app)  # Enable CORS for all routes
 
 # --- CARLA HELPER FUNCTIONS ---
 
-def upload_audio_to_express(car_id, audio_path=AUDIO_FILE_PATH):
-    if not os.path.exists(audio_path):
-        return
+def get_audio_category_from_speed(speed_kmh, previous_speed=0.0):
+    """
+    Determine audio category based on car speed and state.
+    Returns a category string that matches AUDIO_CATEGORY_FOLDERS keys.
+    For normal driving, returns speed-based categories that map to road_traffic_dataset.
+    """
+    speed_diff = speed_kmh - previous_speed
+    
+    # Check for braking (significant negative speed change)
+    if speed_diff < -10:
+        return 'braking'
+    
+    # Categorize by speed (all map to road_traffic_dataset folder)
+    if speed_kmh < 5:
+        return 'idle'  # Will search in road_traffic_dataset or use keywords
+    elif speed_kmh < 30:
+        return 'low_speed'  # Maps to road_traffic_dataset
+    elif speed_kmh < 70:
+        return 'medium_speed'  # Maps to road_traffic_dataset
+    else:
+        return 'high_speed'  # Maps to road_traffic_dataset
+
+def find_audio_file_from_dataset(category):
+    """
+    Find an audio file from the dataset based on category.
+    First tries to find files in category-specific folders, then falls back to keyword matching.
+    Returns path to audio file or None if not found.
+    """
+    if not os.path.exists(AUDIO_DATASET_PATH):
+        print(f"WARNING: Audio dataset path does not exist: {AUDIO_DATASET_PATH}")
+        return None
+    
+    # Supported audio file extensions
+    audio_extensions = ['.wav', '.mp3', '.m4a', '.flac', '.ogg']
+    
+    matching_files = []
+    
+    # Strategy 1: Look in category-specific folders first
+    category_folders = AUDIO_CATEGORY_FOLDERS.get(category, [])
+    if category_folders:
+        for folder_name in category_folders:
+            folder_path = os.path.join(AUDIO_DATASET_PATH, folder_name)
+            if os.path.exists(folder_path) and os.path.isdir(folder_path):
+                # Search in this specific folder
+                for root, dirs, files in os.walk(folder_path):
+                    for file in files:
+                        file_lower = file.lower()
+                        if any(file_lower.endswith(ext) for ext in audio_extensions):
+                            matching_files.append(os.path.join(root, file))
+    
+    # Strategy 2: If no files found in category folders, try keyword matching in all folders
+    if not matching_files:
+        keywords = AUDIO_CATEGORY_KEYWORDS.get(category, [])
+        if keywords:
+            for root, dirs, files in os.walk(AUDIO_DATASET_PATH):
+                for file in files:
+                    file_lower = file.lower()
+                    # Check if file has audio extension
+                    if any(file_lower.endswith(ext) for ext in audio_extensions):
+                        # Check if filename contains any category keyword
+                        for keyword in keywords:
+                            if keyword.lower() in file_lower:
+                                matching_files.append(os.path.join(root, file))
+                                break
+    
+    # Return random file from matches, or None if no matches
+    if matching_files:
+        selected_file = random.choice(matching_files)
+        print(f"DEBUG: Found {len(matching_files)} audio files for category '{category}', selected: {os.path.basename(selected_file)}")
+        return selected_file
+    
+    print(f"WARNING: No audio files found for category '{category}' in dataset path: {AUDIO_DATASET_PATH}")
+    return None
+
+def generate_audio_from_speed(speed_kmh, duration=2.0, sample_rate=16000):
+    """
+    Generate a simple audio signal based on car speed (FALLBACK ONLY).
+    Creates a tone that varies with speed to simulate engine/road noise.
+    Only used if no audio files are found in the dataset.
+    """
+    # Create a temporary WAV file
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.wav')
+    temp_path = temp_file.name
+    temp_file.close()
+    
     try:
+        # Generate audio samples
+        num_samples = int(sample_rate * duration)
+        # Frequency varies with speed (200-800 Hz range)
+        base_freq = 200 + (speed_kmh / 100.0) * 600
+        # Amplitude varies with speed
+        amplitude = 0.3 + min(speed_kmh / 100.0, 0.7)
+        
+        with wave.open(temp_path, 'w') as wav_file:
+            wav_file.setnchannels(1)  # Mono
+            wav_file.setsampwidth(2)   # 16-bit
+            wav_file.setframerate(sample_rate)
+            
+            for i in range(num_samples):
+                # Generate a mix of frequencies to simulate engine noise
+                t = float(i) / sample_rate
+                # Main frequency (engine)
+                value1 = amplitude * np.sin(2 * np.pi * base_freq * t)
+                # Higher harmonics (road noise)
+                value2 = 0.3 * amplitude * np.sin(2 * np.pi * base_freq * 2 * t)
+                value3 = 0.2 * amplitude * np.sin(2 * np.pi * base_freq * 3 * t)
+                # Add some noise
+                noise = 0.1 * amplitude * (random.random() - 0.5)
+                
+                sample = value1 + value2 + value3 + noise
+                # Clamp to valid range
+                sample = max(-1.0, min(1.0, sample))
+                # Convert to 16-bit integer
+                sample_int = int(sample * 32767)
+                wav_file.writeframes(struct.pack('<h', sample_int))
+        
+        return temp_path
+    except Exception as e:
+        print(f"ERROR: Failed to generate audio: {e}")
+        if os.path.exists(temp_path):
+            os.unlink(temp_path)
+        return None
+
+def upload_audio_to_express(car_id, speed_kmh=0.0, previous_speed=0.0):
+    """
+    Select audio file from dataset based on car state and upload to Express backend for processing.
+    Only processes audio if car is moving above threshold speed.
+    """
+    if speed_kmh < MIN_SPEED_FOR_AUDIO:
+        return  # Don't process audio for stationary or very slow cars
+    
+    audio_path = None
+    is_temp_file = False  # Track if we created a temporary file
+    
+    try:
+        # Determine audio category based on speed and state
+        category = get_audio_category_from_speed(speed_kmh, previous_speed)
+        
+        # Try to find audio file from dataset
+        audio_path = find_audio_file_from_dataset(category)
+        
+        if audio_path:
+            print(f"INFO: [{car_id}] Using dataset audio file: {os.path.basename(audio_path)} (category: {category})")
+        else:
+            # Fallback: Generate audio if no dataset files found
+            print(f"WARNING: [{car_id}] No dataset audio found for category '{category}', generating fallback audio")
+            audio_path = generate_audio_from_speed(speed_kmh)
+            is_temp_file = True
+            if not audio_path:
+                print(f"ERROR: [{car_id}] Could not generate fallback audio file")
+                return
+        
+        # Determine MIME type based on file extension
+        file_ext = os.path.splitext(audio_path)[1].lower()
+        mime_types = {
+            '.wav': 'audio/wav',
+            '.mp3': 'audio/mpeg',
+            '.m4a': 'audio/mp4',
+            '.flac': 'audio/flac',
+            '.ogg': 'audio/ogg'
+        }
+        mime_type = mime_types.get(file_ext, 'audio/wav')
+        
+        # Upload to Express backend
         with open(audio_path, 'rb') as f:
             audio_bytes = f.read()
-        files = {'audio_file': (f'{car_id}_event.mp3', audio_bytes, 'audio/mp3')}
-        requests.post(f"{EXPRESS_HTTP_URL}/audio-upload", files=files, data={'car_id': car_id}, timeout=5)
-    except Exception as e:
+        
+        filename = f'{car_id}_event{file_ext}'
+        files = {'audio': (filename, audio_bytes, mime_type)}
+        headers = {'X-Service-Token': SERVICE_TOKEN}
+        data = {'carId': car_id}
+        
+        response = requests.post(
+            f"{EXPRESS_HTTP_URL}/api/ai/process-audio",
+            files=files,
+            data=data,
+            headers=headers,
+            timeout=10
+        )
+        
+        if response.status_code == 200:
+            result = response.json()
+            analysis = result.get('analysis', {})
+            print(f"INFO: [{car_id}] Audio processed successfully. Prediction: {analysis.get('prediction', 'N/A')}, Confidence: {analysis.get('confidence', 0):.2f}")
+        else:
+            print(f"WARNING: [{car_id}] Audio processing returned status {response.status_code}: {response.text}")
+            
+    except requests.exceptions.RequestException as e:
         print(f"ERROR: [{car_id}] Could not connect to Express backend for audio upload: {e}")
+    except Exception as e:
+        print(f"ERROR: [{car_id}] Error processing audio: {e}")
+    finally:
+        # Clean up temporary file if we generated one
+        if is_temp_file and audio_path and os.path.exists(audio_path):
+            try:
+                os.unlink(audio_path)
+            except Exception as e:
+                print(f"WARNING: [{car_id}] Failed to delete temporary audio file: {e}")
 
 def camera_callback(image, car_id, car_data, camera_type):
     img_data = np.array(image.raw_data).reshape((image.height, image.width, 4))
@@ -144,10 +367,26 @@ def carla_simulation_thread(car_id, spawn_point, tm_port, model='vehicle.tesla.m
         # --- Main Simulation Loop ---
         last_audio_time = time.time()
         while True:
-            update_telemetry_data(car_id, car_data) 
-            if time.time() - last_audio_time > 10: 
-                upload_audio_to_express(car_id) 
-                last_audio_time = time.time()
+            update_telemetry_data(car_id, car_data)
+            
+            # Get current and previous speed from telemetry
+            with car_data['lock']:
+                current_speed = car_data['telemetry'].get('speed', 0.0)
+                previous_speed = car_data.get('previous_speed', 0.0)
+            
+            # Only process audio if car is moving and enough time has passed
+            if current_speed >= MIN_SPEED_FOR_AUDIO:
+                if time.time() - last_audio_time >= AUDIO_INTERVAL:
+                    upload_audio_to_express(car_id, current_speed, previous_speed)
+                    # Update previous speed after processing
+                    with car_data['lock']:
+                        car_data['previous_speed'] = current_speed
+                    last_audio_time = time.time()
+            else:
+                # Reset previous speed when car stops
+                with car_data['lock']:
+                    car_data['previous_speed'] = 0.0
+            
             time.sleep(0.01)
 
     except KeyboardInterrupt:
