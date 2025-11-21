@@ -7,7 +7,19 @@ const {
 	getDevices,
 	getActiveDevices,
 	getDeviceById,
-	updateDevice,
+	getDeviceStatus,
+	updateDeviceHeartbeat,
+	submitTelemetry,
+	getDeviceTelemetry,
+	sendDeviceCommand,
+	getDeviceCommandStatus,
+	getAllFirmwareVersions,
+	addFirmwareVersion,
+	updateDeviceFirmware,
+	getFleetHealthOverview,
+	getFleetAnalyticsData,
+	getFleetMapData,
+	getDeviceDiagnosticsData
 } = require("../controllers/deviceController");
 
 // Apply authentication middleware to all device routes
@@ -21,7 +33,12 @@ router.post("/register", async (req, res) => {
 		const userId = req.user.id;
 
 		// Extract device data from request body
-		const { deviceType, carId, firmwareVersion, certificate } = req.body;
+		const {
+			deviceType,
+			carId,
+			firmwareVersion,
+			certificate,
+		} = req.body;
 
 		// Validate required fields
 		if (!deviceType || !carId) {
@@ -61,9 +78,7 @@ router.post("/register", async (req, res) => {
 	} catch (error) {
 		console.error("Device Registration Error:", error.message);
 		res.status(500).json({
-			message:
-				error.message ||
-				"Failed to register device due to server error.",
+			message: error.message || "Failed to register device due to server error.",
 		});
 	}
 });
@@ -83,7 +98,7 @@ router.get("/", async (req, res) => {
 			userId,
 			carId,
 			deviceType,
-			status,
+			status
 		});
 
 		res.status(200).json({
@@ -100,14 +115,15 @@ router.get("/", async (req, res) => {
 });
 
 // GET /api/devices/active
+// Get all active devices
 router.get("/active", async (req, res) => {
 	try {
-		const activeDevices = await getActiveDevices();
+		const devices = await getActiveDevices();
 
 		res.status(200).json({
-			message: "Active Devices retrieved successfully",
-			count: activeDevices.length,
-			devices: activeDevices,
+			message: "Active devices retrieved successfully",
+			count: devices.length,
+			data: devices,
 		});
 	} catch (error) {
 		console.error("Get Active Devices Error:", error.message);
@@ -134,7 +150,7 @@ router.get("/:deviceId", async (req, res) => {
 		const device = await getDeviceById({
 			deviceId,
 			userRole,
-			userId,
+			userId
 		});
 
 		if (!device) {
@@ -155,55 +171,467 @@ router.get("/:deviceId", async (req, res) => {
 	}
 });
 
-// PATCH /api/devices/:deviceId
-router.patch("/:deviceId", async (req, res) => {
+// GET /api/devices/:deviceId/status
+// Get device connection status and history
+router.get("/:deviceId/status", async (req, res) => {
 	try {
 		const userRole = req.user.role;
 		const userId = req.user.id;
 		const deviceId = parseInt(req.params.deviceId);
-		const updates = req.body;
 
-		const device = await getDeviceById({
+		if (isNaN(deviceId)) {
+			return res.status(400).json({
+				message: "Invalid device ID format",
+			});
+		}
+
+		const status = await getDeviceStatus({
 			deviceId,
 			userRole,
-			userId,
+			userId
 		});
 
-		if (!device) {
+		if (!status) {
 			return res.status(404).json({
 				message: `Device with ID ${deviceId} not found or access denied`,
 			});
 		}
 
-		let deviceStatus = device.status;
-		let deviceTimestamp = device.last_heartbeat;
+		res.status(200).json({
+			message: "Device status retrieved successfully",
+			status: status,
+		});
+	} catch (error) {
+		console.error("Get Device Status Error:", error.message);
+		res.status(500).json({
+			message: "Failed to retrieve device status due to server error.",
+		});
+	}
+});
 
-		if (updates.updateStatus != undefined || updates.updateStatus != null) {
-			deviceStatus = updates.updateStatus;
+// POST /api/devices/:deviceId/heartbeat
+// Update device heartbeat timestamp
+router.post("/:deviceId/heartbeat", async (req, res) => {
+	try {
+		const userRole = req.user.role;
+		const userId = req.user.id;
+		const deviceId = parseInt(req.params.deviceId);
+
+		if (isNaN(deviceId)) {
+			return res.status(400).json({
+				message: "Invalid device ID format",
+			});
 		}
 
-		if (
-			updates.updateTimestamp != undefined ||
-			updates.updateTimestamp != null
-		) {
-			deviceTimestamp = updates.updateTimestamp;
+		const updatedDevice = await updateDeviceHeartbeat({
+			deviceId,
+			userRole,
+			userId
+		});
+
+		if (!updatedDevice) {
+			return res.status(404).json({
+				message: `Device with ID ${deviceId} not found or access denied`,
+			});
 		}
 
-		const updatedDevice = await updateDevice({
+		res.status(200).json({
+			message: "Heartbeat updated successfully",
+			device: {
+				device_id: updatedDevice.device_id,
+				status: updatedDevice.status,
+				last_heartbeat: updatedDevice.last_heartbeat,
+			},
+		});
+	} catch (error) {
+		console.error("Update Heartbeat Error:", error.message);
+		res.status(500).json({
+			message: "Failed to update heartbeat due to server error.",
+		});
+	}
+});
+
+// POST /api/devices/:deviceId/telemetry
+// Submit telemetry data for a device
+router.post("/:deviceId/telemetry", async (req, res) => {
+	try {
+		const userRole = req.user.role;
+		const userId = req.user.id;
+		const deviceId = parseInt(req.params.deviceId);
+
+		if (isNaN(deviceId)) {
+			return res.status(400).json({
+				message: "Invalid device ID format",
+			});
+		}
+
+		const telemetryData = req.body;
+
+		const telemetry = await submitTelemetry({
 			deviceId,
 			userRole,
 			userId,
-			deviceStatus,
-			deviceTimestamp,
+			telemetryData
 		});
-		res.status(200).json({
-			message: "Device updated successfully",
-			device: updatedDevice,
+
+		if (!telemetry) {
+			return res.status(404).json({
+				message: `Device with ID ${deviceId} not found or access denied`,
+			});
+		}
+
+		res.status(201).json({
+			message: "Telemetry data submitted successfully",
+			telemetry: telemetry,
 		});
 	} catch (error) {
-		console.error("Patch Device Error:", error.message);
+		console.error("Submit Telemetry Error:", error.message);
 		res.status(500).json({
-			message: "Failed to update device due to server error.",
+			message: "Failed to submit telemetry due to server error.",
+		});
+	}
+});
+
+// GET /api/devices/:deviceId/telemetry
+// Get telemetry data for a device
+router.get("/:deviceId/telemetry", async (req, res) => {
+	try {
+		const userRole = req.user.role;
+		const userId = req.user.id;
+		const deviceId = parseInt(req.params.deviceId);
+
+		if (isNaN(deviceId)) {
+			return res.status(400).json({
+				message: "Invalid device ID format",
+			});
+		}
+
+		// Get query parameters
+		const { limit, offset, startDate, endDate } = req.query;
+
+		const options = {
+			limit: limit ? parseInt(limit) : 100,
+			offset: offset ? parseInt(offset) : 0,
+			startDate: startDate || null,
+			endDate: endDate || null,
+		};
+
+		const telemetry = await getDeviceTelemetry({
+			deviceId,
+			userRole,
+			userId,
+			options
+		});
+
+		if (telemetry === null) {
+			return res.status(404).json({
+				message: `Device with ID ${deviceId} not found or access denied`,
+			});
+		}
+
+		res.status(200).json({
+			message: "Telemetry data retrieved successfully",
+			count: telemetry.length,
+			telemetry: telemetry,
+		});
+	} catch (error) {
+		console.error("Get Telemetry Error:", error.message);
+		res.status(500).json({
+			message: "Failed to retrieve telemetry due to server error.",
+		});
+	}
+});
+
+// POST /api/devices/:deviceId/commands
+// Send a command to a device
+router.post("/:deviceId/commands", async (req, res) => {
+	try {
+		const userRole = req.user.role;
+		const userId = req.user.id;
+		const deviceId = parseInt(req.params.deviceId);
+
+		if (isNaN(deviceId)) {
+			return res.status(400).json({
+				message: "Invalid device ID format",
+			});
+		}
+
+		const commandData = req.body;
+
+		// Validate required fields
+		if (!commandData.command_type) {
+			return res.status(400).json({
+				message: "Missing required field: command_type",
+			});
+		}
+
+		const command = await sendDeviceCommand({
+			deviceId,
+			userRole,
+			userId,
+			commandData
+		});
+
+		if (!command) {
+			return res.status(404).json({
+				message: `Device with ID ${deviceId} not found or access denied`,
+			});
+		}
+
+		res.status(201).json({
+			message: "Command created successfully",
+			command: command,
+		});
+	} catch (error) {
+		console.error("Send Command Error:", error.message);
+		res.status(500).json({
+			message: error.message || "Failed to send command due to server error.",
+		});
+	}
+});
+
+// GET /api/devices/:deviceId/commands/:commandId/status
+// Get command status
+router.get("/:deviceId/commands/:commandId/status", async (req, res) => {
+	try {
+		const userRole = req.user.role;
+		const userId = req.user.id;
+		const deviceId = parseInt(req.params.deviceId);
+		const commandId = req.params.commandId; // UUID, keep as string
+
+		if (isNaN(deviceId)) {
+			return res.status(400).json({
+				message: "Invalid device ID format",
+			});
+		}
+
+		const command = await getDeviceCommandStatus({
+			deviceId,
+			commandId,
+			userRole,
+			userId
+		});
+
+		if (!command) {
+			return res.status(404).json({
+				message: `Command with ID ${commandId} not found or access denied`,
+			});
+		}
+
+		res.status(200).json({
+			message: "Command status retrieved successfully",
+			command: command,
+		});
+	} catch (error) {
+		console.error("Get Command Status Error:", error.message);
+		res.status(500).json({
+			message: "Failed to retrieve command status due to server error.",
+		});
+	}
+});
+
+// GET /api/devices/firmware/versions
+// Get all firmware versions
+router.get("/firmware/versions", async (req, res) => {
+	try {
+		const { device_type } = req.query;
+
+		const firmwareVersions = await getAllFirmwareVersions({ device_type });
+
+		res.status(200).json({
+			message: "Firmware versions retrieved successfully",
+			count: firmwareVersions.length,
+			firmware: firmwareVersions,
+		});
+	} catch (error) {
+		console.error("Get Firmware Versions Error:", error.message);
+		res.status(500).json({
+			message: "Failed to retrieve firmware versions due to server error.",
+		});
+	}
+});
+
+// POST /api/devices/firmware/versions
+// Create a new firmware version (Admin only)
+router.post("/firmware/versions", async (req, res) => {
+	try {
+		const userRole = req.user.role;
+
+		// Only Admin can create firmware versions
+		if (userRole !== "Admin") {
+			return res.status(403).json({
+				message: "Only administrators can create firmware versions",
+			});
+		}
+
+		const firmwareData = req.body;
+
+		// Validate required fields
+		if (!firmwareData.version || !firmwareData.device_type) {
+			return res.status(400).json({
+				message: "Missing required fields: version, device_type",
+			});
+		}
+
+		const firmware = await addFirmwareVersion({ firmwareData });
+
+		res.status(201).json({
+			message: "Firmware version created successfully",
+			firmware: firmware,
+		});
+	} catch (error) {
+		console.error("Create Firmware Version Error:", error.message);
+		res.status(500).json({
+			message: error.message || "Failed to create firmware version due to server error.",
+		});
+	}
+});
+
+// POST /api/devices/:deviceId/firmware/update
+// Update device firmware
+router.post("/:deviceId/firmware/update", async (req, res) => {
+	try {
+		const userRole = req.user.role;
+		const userId = req.user.id;
+		const deviceId = parseInt(req.params.deviceId);
+
+		if (isNaN(deviceId)) {
+			return res.status(400).json({
+				message: "Invalid device ID format",
+			});
+		}
+
+		const { target_version } = req.body;
+
+		if (!target_version) {
+			return res.status(400).json({
+				message: "Missing required field: target_version",
+			});
+		}
+
+		const updateResult = await updateDeviceFirmware({
+			deviceId,
+			userRole,
+			userId,
+			targetVersion: target_version
+		});
+
+		if (!updateResult) {
+			return res.status(404).json({
+				message: `Device with ID ${deviceId} not found or access denied`,
+			});
+		}
+
+		res.status(200).json({
+			message: "Firmware update initiated successfully",
+			update: updateResult,
+		});
+	} catch (error) {
+		console.error("Update Firmware Error:", error.message);
+		res.status(500).json({
+			message: error.message || "Failed to update firmware due to server error.",
+		});
+	}
+});
+
+// GET /api/devices/fleet/health
+// Get fleet health overview
+router.get("/fleet/health", async (req, res) => {
+	try {
+		const userRole = req.user.role;
+		const userId = req.user.id;
+
+		const health = await getFleetHealthOverview({ userRole, userId });
+
+		res.status(200).json({
+			message: "Fleet health retrieved successfully",
+			health: health,
+		});
+	} catch (error) {
+		console.error("Get Fleet Health Error:", error.message);
+		res.status(500).json({
+			message: "Failed to retrieve fleet health due to server error.",
+		});
+	}
+});
+
+// GET /api/devices/fleet/analytics
+// Get fleet analytics and insights
+router.get("/fleet/analytics", async (req, res) => {
+	try {
+		const userRole = req.user.role;
+		const userId = req.user.id;
+
+		const analytics = await getFleetAnalyticsData({ userRole, userId });
+
+		res.status(200).json({
+			message: "Fleet analytics retrieved successfully",
+			analytics: analytics,
+		});
+	} catch (error) {
+		console.error("Get Fleet Analytics Error:", error.message);
+		res.status(500).json({
+			message: "Failed to retrieve fleet analytics due to server error.",
+		});
+	}
+});
+
+// GET /api/devices/fleet/map
+// Get fleet map data
+router.get("/fleet/map", async (req, res) => {
+	try {
+		const userRole = req.user.role;
+		const userId = req.user.id;
+
+		const mapData = await getFleetMapData({ userRole, userId });
+
+		res.status(200).json({
+			message: "Fleet map data retrieved successfully",
+			count: mapData.length,
+			devices: mapData,
+		});
+	} catch (error) {
+		console.error("Get Fleet Map Error:", error.message);
+		res.status(500).json({
+			message: "Failed to retrieve fleet map data due to server error.",
+		});
+	}
+});
+
+// GET /api/devices/:deviceId/diagnostics
+// Get device diagnostics
+router.get("/:deviceId/diagnostics", async (req, res) => {
+	try {
+		const userRole = req.user.role;
+		const userId = req.user.id;
+		const deviceId = parseInt(req.params.deviceId);
+
+		if (isNaN(deviceId)) {
+			return res.status(400).json({
+				message: "Invalid device ID format",
+			});
+		}
+
+		const diagnostics = await getDeviceDiagnosticsData({
+			deviceId,
+			userRole,
+			userId
+		});
+
+		if (!diagnostics) {
+			return res.status(404).json({
+				message: `Device with ID ${deviceId} not found or access denied`,
+			});
+		}
+
+		res.status(200).json({
+			message: "Device diagnostics retrieved successfully",
+			diagnostics: diagnostics,
+		});
+	} catch (error) {
+		console.error("Get Device Diagnostics Error:", error.message);
+		res.status(500).json({
+			message: "Failed to retrieve device diagnostics due to server error.",
 		});
 	}
 });
