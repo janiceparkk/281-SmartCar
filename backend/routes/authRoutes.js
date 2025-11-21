@@ -3,25 +3,35 @@ const router = express.Router();
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
 
-const {
-	registerUser,
-	authenticateUser,
-	registerSmartCar,
-} = require("../services");
+const { registerUser, authenticateUser } = require("../services");
 
 router.post("/register", async (req, res) => {
 	try {
 		const { email, password, name, role, model } = req.body;
+		const existing = await req.db.pgPool.query(
+			"SELECT user_id FROM users WHERE email=$1",
+			[email]
+		);
 
-		const newUser = await registerUser({ email, password, name, role });
-
-		if (newUser.role === "CarOwner" && model) {
-			await registerSmartCar(
-				{ model: model },
-				newUser.role,
-				newUser.user_id
-			);
+		if (existing.rows.length > 0) {
+			return res.status(400).json({ message: "User already exists." });
 		}
+
+		// Here we also initialize profile_data with default values, since they have click agree to sign up
+		const defaultProfileData = {
+			emailNotifications: true,
+			pushNotifications: true,
+			location: "",
+			picture: "",
+		};
+
+		const newUser = await registerUser({
+			email,
+			password,
+			name,
+			role,
+			profile_data: defaultProfileData,
+		});
 
 		res.status(201).json({
 			message: "User registered successfully.",
@@ -30,6 +40,7 @@ router.post("/register", async (req, res) => {
 				name: newUser.name,
 				email: newUser.email,
 				role: newUser.role,
+				profile_data: defaultProfileData,
 			},
 		});
 	} catch (error) {
@@ -53,7 +64,11 @@ router.post("/login", async (req, res) => {
 		}
 
 		const token = jwt.sign(
-			{ id: user.user_id, role: user.role_name },
+			{
+				id: user.user_id,
+				role: user.role_name,
+				email: user.email,
+			},
 			req.db.JWT_SECRET,
 			{ expiresIn: "1h" }
 		);
@@ -79,6 +94,7 @@ router.post("/login", async (req, res) => {
 				name: user.name,
 				email: user.email,
 				role: user.role_name,
+				profile_data: user.profile_data || {},
 			},
 			cars: userCars,
 		});

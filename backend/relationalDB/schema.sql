@@ -35,19 +35,25 @@ CREATE TABLE IF NOT EXISTS users (
     user_type VARCHAR(50),
     name VARCHAR(100),  
     email VARCHAR(255) NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
+    password_hash TEXT,
     phone VARCHAR(50),
     company_name VARCHAR(100),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-    last_login TIMESTAMP WITH TIME ZONE
+    last_login TIMESTAMP WITH TIME ZONE,
+    profile_data JSONB DEFAULT '{}'
 );
 
 -- 3. smart_cars Table
 -- Core table for registered autonomous vehicles
 CREATE TABLE IF NOT EXISTS smart_cars (
     car_id SERIAL PRIMARY KEY,
-    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE, -- Owner (Foreign Key to users)
+    user_id INTEGER REFERENCES users(user_id) ON DELETE CASCADE,
+    make VARCHAR(50),
     model VARCHAR(100),
+    year INTEGER,
+    color VARCHAR(30),
+    license_plate VARCHAR(20),
+    vin VARCHAR(17),
     status VARCHAR(50),
     current_latitude NUMERIC(9, 6),
     current_longitude NUMERIC(9, 6),

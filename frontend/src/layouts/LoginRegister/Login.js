@@ -1,5 +1,8 @@
-import { useState } from "react";
+import { useState, useContext, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { loginUser } from "services/authService";
+import { AuthContext } from "context/AuthContext";
+
 import Card from "@mui/material/Card";
 import Checkbox from "@mui/material/Checkbox";
 import MDBox from "components/MDBox";
@@ -9,18 +12,28 @@ import MDButton from "components/MDButton";
 import BasicLayout from "layouts/authentication/components/BasicLayout";
 import bgImage from "assets/images/bg-sign-in-basic.jpeg";
 import SocialLoginButtons from "components/SocialLoginButtons";
-import { loginUser } from "services/authService";
 
 function Login() {
 	const [form, setForm] = useState({ email: "", password: "" });
 	const [rememberMe, setRememberMe] = useState(false);
 	const [message, setMessage] = useState("");
+	const { login } = useContext(AuthContext);
+	const navigate = useNavigate();
+
+	// Handle token from URL (Google OAuth)
+	useEffect(() => {
+		const params = new URLSearchParams(window.location.search);
+		const token = params.get("token");
+		if (token) {
+			localStorage.setItem("token", token);
+			login(token); // update context
+			navigate("/dashboard", { replace: true });
+		}
+	}, [navigate, login]);
 
 	const handleSetRememberMe = () => setRememberMe(!rememberMe);
-
-	const handleChange = (e) => {
+	const handleChange = (e) =>
 		setForm({ ...form, [e.target.name]: e.target.value });
-	};
 
 	const handleSubmit = async (e) => {
 		e.preventDefault();
@@ -29,8 +42,8 @@ function Login() {
 		try {
 			const res = await loginUser(form);
 			localStorage.setItem("token", res.token);
-			setMessage("✅ Login successful!");
-			window.location.href = "/dashboard";
+			login(res.token, res.user); // update context
+			navigate("/dashboard", { replace: true }); // immediate redirect
 		} catch (err) {
 			setMessage(`❌ ${err.message}`);
 		}
