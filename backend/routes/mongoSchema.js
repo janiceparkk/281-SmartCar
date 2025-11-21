@@ -26,6 +26,7 @@ const AlertSchema = new mongoose.Schema(
 				"tire_skid",
 				"engine_trouble",
 				"brake_squeal",
+				"traffic",
 				"other",
 			],
 		},
@@ -379,9 +380,55 @@ SystemLogSchema.statics.getComponentStats = function (hours = 1) {
 
 const SystemLog = mongoose.model("SystemLog", SystemLogSchema);
 
+const OIDCUserSchema = new mongoose.Schema(
+	{
+		provider: {
+			type: String,
+			enum: ["google", "apple"],
+			required: true,
+		},
+		providerId: {
+			type: String,
+			required: true,
+			unique: true,
+		},
+		email: {
+			type: String,
+			required: true,
+			lowercase: true,
+			trim: true,
+			unique: true,
+		},
+		name: {
+			type: String,
+			required: true,
+		},
+		picture: {
+			type: String,
+		},
+		role: {
+			type: String,
+			enum: ["CarOwner", "Admin", "ServiceStaff"],
+			default: "CarOwner",
+		},
+		pg_user_id: {
+			type: Number,
+			default: null,
+		},
+		createdAt: {
+			type: Date,
+			default: Date.now,
+		},
+	},
+	{ timestamps: true }
+);
+
+const OIDCUser = mongoose.model("OIDCUser", OIDCUserSchema);
+
 module.exports = {
 	Alert,
 	AudioStream,
 	RealTimeAnalytics,
 	SystemLog,
+	OIDCUser,
 };

@@ -153,3 +153,21 @@ axios.get(`/cars/user/9999`, {
 cd relationalDB
 ./initPsql.sh
 ```
+
+### Setup before running server.js/all in one:
+
+## Before doing so, make sure you have mongodb installed. Here's a link for instruction: https://www.mongodb.com/docs/manual/installation/
+
+```bash
+./initMongoDB.sh
+cd relationalDB/
+./initPsql.sh
+cd ..
+node server.js
+```
+
+### to get into psql
+
+```bash
+sudo -u postgres psql -d smartcar_db
+```

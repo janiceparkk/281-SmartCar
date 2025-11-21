@@ -4,11 +4,6 @@ const { pgPool } = require("../config/database");
 const { authMiddleware } = require("./helper");
 const { registerSmartCar } = require("../services/carService");
 
-router.use((req, res, next) => {
-	const authHeader = req.header("Authorization");
-	next();
-});
-
 router.use(authMiddleware);
 
 // GET /api/cars
@@ -67,28 +62,10 @@ router.get("/user/:userId", async (req, res) => {
 // POST /api/cars (register new car)
 router.post("/", async (req, res) => {
 	try {
-		const userRole = req.user.role;
 		const userId = req.user.id;
 
-		if (userRole === "CarOwner") {
-			if (req.body.user_id && req.body.user_id !== userId) {
-				return res.status(403).json({
-					message: "Not authorized to register cars for other users",
-				});
-			}
-
-			req.body.user_id = userId;
-		}
-
-		if (userRole === "Admin") {
-			if (!req.body.user_id) {
-				return res.status(400).json({
-					message: "user_id required when registering as Admin",
-				});
-			}
-		}
-
-		const newCar = await registerSmartCar(req.body, userRole, userId);
+		// Remove the userRole check from here, let registerSmartCar handle it
+		const newCar = await registerSmartCar(req.body, userId);
 
 		res.status(201).json(newCar);
 	} catch (error) {
@@ -98,7 +75,6 @@ router.post("/", async (req, res) => {
 		});
 	}
 });
-
 // GET /api/cars/user  (Get cars for authenticated user)
 router.get("/user", async (req, res) => {
 	try {
