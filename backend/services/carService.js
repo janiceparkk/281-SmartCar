@@ -251,6 +251,78 @@ async function updateCarStatus(carId, status, userRole, userId) {
 	return result.rows[0] || null;
 }
 
+/** Update general car details with permission check */
+async function updateCarDetails(carId, data, currentUserId) {
+	// Determine current user's role
+	const userResult = await pgPool.query(
+		`SELECT u.user_id, ur.role_name
+         FROM users u
+         JOIN user_roles ur ON u.role_id = ur.role_id
+         WHERE u.user_id = $1`,
+		[currentUserId]
+	);
+
+	if (userResult.rows.length === 0) {
+		throw new Error("User not found");
+	}
+
+	const userRole = userResult.rows[0].role_name;
+
+	const allowedFields = {
+		make: "make",
+		model: "model",
+		year: "year",
+		color: "color",
+		status: "status",
+		license_plate: "license_plate",
+		vin: "vin",
+		current_latitude: "current_latitude",
+		current_longitude: "current_longitude",
+	};
+
+	const setClauses = [];
+	const params = [];
+	let paramIndex = 1;
+
+	Object.entries(allowedFields).forEach(([field, column]) => {
+		if (data[field] !== undefined && data[field] !== null) {
+			setClauses.push(`${column} = $${paramIndex++}`);
+			params.push(data[field]);
+		}
+	});
+
+	if (setClauses.length === 0) {
+		throw new Error("No valid fields provided for update");
+	}
+
+	// Always update last_updated timestamp
+	setClauses.push("last_updated = CURRENT_TIMESTAMP");
+
+	let query = `
+        UPDATE smart_cars
+        SET ${setClauses.join(", ")}
+        WHERE car_id = $${paramIndex}
+    `;
+	params.push(carId);
+
+	if (userRole !== "Admin") {
+		query += ` AND user_id = $${paramIndex + 1}`;
+		params.push(currentUserId);
+	}
+
+	query += " RETURNING *;";
+
+	const result = await pgPool.query(query, params);
+
+	if (result.rows.length === 0) {
+		throw new Error(
+			"Car not found or you do not have permission to update it"
+		);
+	}
+
+	return result.rows[0];
+}
+
 module.exports = {
 	registerSmartCar,
 	getSmartCarById,
@@ -258,4 +330,5 @@ module.exports = {
 	updateCarStatus,
 	getCarsByUserId,
 	getAllCars,
+	updateCarDetails,
 };

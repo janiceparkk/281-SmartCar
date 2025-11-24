@@ -10,7 +10,7 @@ import os
 import threading
 from flask import Flask, jsonify, Response, abort, request
 from flask_cors import CORS
-import argparse
+import argparse 
 import tempfile
 import wave
 import struct 
@@ -367,7 +367,7 @@ def carla_simulation_thread(car_id, spawn_point, tm_port, model='vehicle.tesla.m
         # --- Main Simulation Loop ---
         last_audio_time = time.time()
         while True:
-            update_telemetry_data(car_id, car_data)
+            update_telemetry_data(car_id, car_data) 
             
             # Get current and previous speed from telemetry
             with car_data['lock']:
@@ -381,7 +381,7 @@ def carla_simulation_thread(car_id, spawn_point, tm_port, model='vehicle.tesla.m
                     # Update previous speed after processing
                     with car_data['lock']:
                         car_data['previous_speed'] = current_speed
-                    last_audio_time = time.time()
+                last_audio_time = time.time()
             else:
                 # Reset previous speed when car stops
                 with car_data['lock']:
