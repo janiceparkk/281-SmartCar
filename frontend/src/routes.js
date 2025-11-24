@@ -4,6 +4,7 @@ import Dashboard from "layouts/dashboard";
 import SignUp from "layouts/LoginRegister/SignUp";
 import Login from "layouts/LoginRegister/Login";
 import UserProfile from "layouts/UserProfile";
+import ServiceForm from "layouts/serviceRequests";
 import AlertDetails from "layouts/dashboard/components/AlertLogs/alertDetails";
 import LogDetails from "layouts/dashboard/components/ServiceLogs/logDetails";
 import CarlaDashboard from "layouts/CarlaDashboard";
@@ -74,6 +75,18 @@ export const getRoutes = () => {
 				}
 			);
 
+			return res;
+		} catch (error) {
+			return false;
+		}
+	}
+
+	async function fetchAlerts() {
+		try {
+			const token = localStorage.getItem("token");
+			const res = await axios.get("http://localhost:5000/api/alerts", {
+				headers: { Authorization: `Bearer ${token}` },
+			});
 			return res;
 		} catch (error) {
 			return false;
@@ -162,7 +175,6 @@ export const getRoutes = () => {
 	}
 
 	const routes = [
-		// Main app routes (protected)
 		{
 			type: "collapse",
 			name: "Dashboard",
@@ -263,8 +275,6 @@ export const getRoutes = () => {
 			component: <Login />,
 			public: true,
 		},
-
-		// User profile (protected)
 		{
 			type: "collapse",
 			name: "User Profile",
@@ -289,13 +299,19 @@ export const getRoutes = () => {
 			component: <ProtectedComponent component={<CarlaDashboard />} />,
 			protected: true,
 		},
+		{
+			type: "collapse",
+			name: "Service Help",
+			key: "service-help",
+			icon: <Icon fontSize="small">help</Icon>,
+			route: "/service/help",
+			component: <ProtectedComponent component={<ServiceForm />} />,
+			protected: true,
+		},
 	];
 
-	// If not logged in, show only public routes
 	if (!loggedIn) {
 		return routes.filter((route) => route.public);
 	}
-
-	// If logged in, show only protected routes (and hide public auth routes)
 	return routes.filter((route) => route.protected);
 };
