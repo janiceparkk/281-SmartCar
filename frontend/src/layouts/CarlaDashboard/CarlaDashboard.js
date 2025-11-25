@@ -46,6 +46,8 @@ import {
 } from "@mui/icons-material";
 import { GoogleMap, MarkerF, useJsApiLoader } from "@react-google-maps/api";
 import { Skeleton } from "@mui/material";
+import DashboardNavbar from "examples/Navbars/DashboardNavbar";
+import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 
 const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
 const CARLA_BRIDGE_URL =
@@ -199,7 +201,12 @@ const CarlaDashboard = () => {
 		current_longitude: "",
 	});
 	const [carlaAvailable, setCarlaAvailable] = useState(false);
+	const [videoReady, setVideoReady] = useState(false);
 	const videoRefs = useRef({});
+
+	const [alerts, setAlerts] = useState([]);
+	const [alertPage, setAlertPage] = useState(1);
+	const [loadingAlerts, setLoadingAlerts] = useState(false);
 
 	const { isLoaded: isMapLoaded, loadError: mapLoadError } = useJsApiLoader({
 		id: "google-map-script",
@@ -212,23 +219,51 @@ const CarlaDashboard = () => {
 	);
 	const isFetching = useRef(false);
 
+	// Reset videoReady when selectedCar changes
+	useEffect(() => {
+		setVideoReady(false);
+	}, [selectedCar]);
+
+	// Utility function to convert CARLA coordinates to real-world latitude and longitude
+	const carlaToLatLng = (x, y, originLat, originLng) => {
+		const metersPerDegreeLat = 111320; // Approximate meters per degree latitude
+		const metersPerDegreeLng =
+			(40075000 * Math.cos((originLat * Math.PI) / 180)) / 360; // Adjust for longitude
+
+		const lat = originLat + y / metersPerDegreeLat;
+		const lng = originLng + x / metersPerDegreeLng;
+
+		return { lat, lng };
+	};
+
+	// Define a reference point for CARLA's origin in real-world coordinates
+	const CARLA_ORIGIN = { lat: 37.7749, lng: -122.4194 }; // Example: San Francisco
+
+	// Update mapCoordinates to use the transformation
 	const mapCoordinates = useMemo(() => {
 		if (!selectedCar) return null;
 		const carlaCarId =
 			selectedCar?.carla_car_id || selectedCar?.license_plate;
 		const telemetry = carlaCarId ? telemetryData[carlaCarId] : null;
-		const lat = telemetry?.lat ?? selectedCar.current_latitude ?? null;
-		const lon = telemetry?.lon ?? selectedCar.current_longitude ?? null;
+		const x = telemetry?.lon ?? selectedCar.current_longitude ?? null;
+		const y = telemetry?.lat ?? selectedCar.current_latitude ?? null;
 
 		if (
-			lat === null ||
-			lon === null ||
-			Number.isNaN(Number(lat)) ||
-			Number.isNaN(Number(lon))
+			x === null ||
+			y === null ||
+			Number.isNaN(Number(x)) ||
+			Number.isNaN(Number(y))
 		) {
 			return null;
 		}
-		return { lat: Number(lat), lng: Number(lon) };
+
+		// Convert CARLA coordinates to latitude and longitude
+		return carlaToLatLng(
+			Number(x),
+			Number(y),
+			CARLA_ORIGIN.lat,
+			CARLA_ORIGIN.lng
+		);
 	}, [selectedCar, telemetryData]);
 
 	const getAuthToken = () => localStorage.getItem("token");
@@ -382,12 +417,17 @@ const CarlaDashboard = () => {
 		} catch (error) {}
 	};
 
+	// REPLACE your existing setupVideoStream function with this:
 	const setupVideoStream = (car) => {
 		if (!car?.is_active_in_carla || !car?.carla_car_id) return;
+
 		const carlaCarId = car.carla_car_id;
 		const videoElement = videoRefs.current[carlaCarId];
-		if (videoElement)
-			videoElement.src = `${CARLA_BRIDGE_URL}/video-stream/${carlaCarId}`;
+
+		if (videoElement) {
+			// Add ?t=Date.now() to force the browser to open a new connection
+			videoElement.src = `${CARLA_BRIDGE_URL}/video-stream/${carlaCarId}?t=${Date.now()}`;
+		}
 	};
 
 	const addNewCar = async () => {
@@ -483,6 +523,15 @@ const CarlaDashboard = () => {
 
 	const removeCar = async (car) => {
 		try {
+			const token = getAuthToken();
+			if (!token) {
+				showSnackbar(
+					"Authentication required. Please log in.",
+					"error"
+				);
+				return;
+			}
+
 			const carlaCarId = car?.carla_car_id || car?.license_plate;
 			if (!carlaCarId) {
 				showSnackbar("Invalid car identifier", "error");
@@ -496,6 +545,21 @@ const CarlaDashboard = () => {
 						{ method: "POST", signal: AbortSignal.timeout(2000) }
 					);
 				} catch (error) {}
+			}
+
+			// Call backend DELETE API to remove car from PostgreSQL
+			const response = await fetch(`${API_URL}/cars/${car.car_id}`, {
+				method: "DELETE",
+				headers: {
+					Authorization: `Bearer ${token}`,
+				},
+			});
+
+			if (!response.ok) {
+				const errorData = await response.json();
+				throw new Error(
+					errorData.message || "Failed to delete car from database"
+				);
 			}
 
 			showSnackbar("Car removed successfully", "success");
@@ -592,15 +656,125 @@ const CarlaDashboard = () => {
 		}
 	};
 
+	// REPLACE the useEffect at lines 708-715 with this:
 	useEffect(() => {
 		if (!selectedCar?.is_active_in_carla) return;
+
 		const telemetryInterval = setInterval(
 			() => fetchTelemetry(selectedCar),
 			15000
 		);
-		setupVideoStream(selectedCar);
-		return () => clearInterval(telemetryInterval);
-	}, [selectedCar?.car_id, selectedCar?.is_active_in_carla]);
+
+		// Small timeout ensures the DOM <img> element is ready before we set the src
+		const videoTimeout = setTimeout(() => {
+			setupVideoStream(selectedCar);
+		}, 100);
+
+		return () => {
+			clearInterval(telemetryInterval);
+			clearTimeout(videoTimeout);
+		};
+		// Dependency on the whole object ensures it runs on refresh
+	}, [selectedCar]);
+
+	// Utility function to remove duplicate alerts based on `alert_id`
+	const removeDuplicateAlerts = (alerts) => {
+		const uniqueAlerts = new Map();
+		alerts.forEach((alert) => {
+			uniqueAlerts.set(alert.alert_id, alert);
+		});
+		return Array.from(uniqueAlerts.values());
+	};
+
+	// Update fetchAlerts to remove duplicates
+	const fetchAlerts = useCallback(
+		async (page = 1) => {
+			if (!selectedCar) {
+				setError("No car selected.");
+				return;
+			}
+
+			setLoadingAlerts(true);
+			try {
+				const token = getAuthToken();
+				if (!token) {
+					setError("Authentication required. Please log in.");
+					setLoadingAlerts(false);
+					return;
+				}
+
+				const carId = selectedCar.carla_car_id || selectedCar.car_id;
+				const response = await fetch(
+					`${API_URL}/alerts/car/${carId}?page=${page}&limit=10`,
+					{
+						headers: {
+							"Content-Type": "application/json",
+							Authorization: `Bearer ${token}`,
+						},
+					}
+				);
+
+				if (response.ok) {
+					const data = await response.json();
+					const newAlerts = Array.isArray(data) ? data : [];
+					setAlerts((prev) =>
+						removeDuplicateAlerts(
+							page === 1 ? newAlerts : [...prev, ...newAlerts]
+						)
+					);
+					setAlertPage(page);
+				} else {
+					const errorData = await response.json();
+					setError(errorData.message || "Failed to fetch alerts.");
+				}
+			} catch (error) {
+				setError(`Failed to fetch alerts: ${error.message}`);
+			} finally {
+				setLoadingAlerts(false);
+			}
+		},
+		[selectedCar]
+	);
+
+	useEffect(() => {
+		fetchAlerts();
+	}, [fetchAlerts]);
+
+	const getAlertsForCar = async (carId) => {
+		try {
+			const token = getAuthToken();
+			if (!token) {
+				setError("Authentication required. Please log in.");
+				return;
+			}
+
+			const response = await fetch(`${API_URL}/alerts/car/${carId}`, {
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${token}`,
+				},
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				setAlerts(data || []);
+			} else {
+				const errorData = await response.json();
+				setError(
+					errorData.message || "Failed to fetch alerts for the car."
+				);
+			}
+		} catch (error) {
+			setError(`Failed to fetch alerts for the car: ${error.message}`);
+		}
+	};
+
+	useEffect(() => {
+		if (selectedCar) {
+			const carId = selectedCar.carla_car_id || selectedCar.car_id;
+			getAlertsForCar(carId);
+		}
+	}, [selectedCar]);
 
 	const getStatusColor = (speed) => {
 		if (speed > 50) return "error";
@@ -625,867 +799,1008 @@ const CarlaDashboard = () => {
 	};
 
 	return (
-		<Container maxWidth="xl" sx={{ py: 4 }}>
-			<Box sx={{ mb: 4 }}>
-				<Typography variant="h4" gutterBottom>
-					Vehicle Dashboard
-				</Typography>
-				<Typography variant="body1" color="textSecondary">
-					Monitor and manage your vehicles
-				</Typography>
-				<Box
-					sx={{
-						mt: 2,
-						display: "flex",
-						gap: 2,
-						alignItems: "center",
-					}}
-				>
-					{carlaAvailable ? (
-						<Chip
-							icon={<CarIcon />}
-							label="CARLA Connected"
-							color="success"
-							size="small"
-						/>
-					) : (
-						<Chip
-							icon={<CloudOffIcon />}
-							label="CARLA Offline - Showing Database Cars"
-							color="default"
-							size="small"
-							variant="outlined"
-						/>
-					)}
-					<Button
-						variant="text"
-						startIcon={<AddIcon />}
-						onClick={() => setAddCarDialogOpen(true)}
+		<DashboardLayout>
+			<DashboardNavbar />
+			<Container maxWidth="xl" sx={{ py: 4 }}>
+				<Box sx={{ mb: 4 }}>
+					<Typography variant="h4" gutterBottom>
+						Vehicle Dashboard
+					</Typography>
+					<Typography variant="body1" color="textSecondary">
+						Monitor and manage your vehicles
+					</Typography>
+					<Box
+						sx={{
+							mt: 2,
+							display: "flex",
+							gap: 2,
+							alignItems: "center",
+						}}
 					>
-						Add Car
-					</Button>
-				</Box>
-			</Box>
-
-			{error && (
-				<Alert
-					severity="error"
-					sx={{ mb: 3 }}
-					onClose={() => setError(null)}
-				>
-					{error}
-				</Alert>
-			)}
-
-			{loading && (
-				<Box>
-					<Skeleton
-						variant="rectangular"
-						height={200}
-						sx={{ mb: 2 }}
-					/>
-					<Skeleton variant="rectangular" height={400} />
-				</Box>
-			)}
-
-			{!loading && (
-				<Card sx={{ mb: 4 }}>
-					<CardHeader
-						title="Your Vehicles"
-						action={
-							<Tooltip title="Refresh Vehicle List">
-								<IconButton onClick={fetchCarList}>
-									<RefreshIcon />
-								</IconButton>
-							</Tooltip>
-						}
-					/>
-					<CardContent>
-						{cars.length > 0 ? (
-							<Box
-								sx={{
-									display: "flex",
-									gap: 2,
-									flexWrap: "wrap",
-								}}
-							>
-								{cars.map((car) => {
-									const carlaCarId =
-										car.carla_car_id || car.license_plate;
-									const isSelected =
-										selectedCar?.car_id === car.car_id ||
-										selectedCar?.license_plate ===
-											car.license_plate;
-									const telemetry = carlaCarId
-										? telemetryData[carlaCarId]
-										: null;
-
-									return (
-										<CarListItem
-											key={car.car_id || carlaCarId}
-											car={car}
-											isSelected={isSelected}
-											telemetry={telemetry}
-											onSelect={setSelectedCar}
-											onRemove={removeCar}
-											onEdit={openEditDialog}
-										/>
-									);
-								})}
-							</Box>
+						{carlaAvailable ? (
+							<Chip
+								icon={<CarIcon />}
+								label="CARLA Connected"
+								color="success"
+								size="small"
+							/>
 						) : (
-							<Box sx={{ textAlign: "center", py: 4 }}>
-								<CarIcon
-									sx={{
-										fontSize: 48,
-										color: "text.secondary",
-										mb: 2,
-									}}
-								/>
-								<Typography
-									variant="h6"
-									color="textSecondary"
-									gutterBottom
-								>
-									No vehicles registered
-								</Typography>
-								<Typography
-									variant="body2"
-									color="textSecondary"
-								>
-									Click "Add Car" to register a new vehicle
-								</Typography>
-							</Box>
+							<Chip
+								icon={<CloudOffIcon />}
+								label="CARLA Offline - Showing Database Cars"
+								color="default"
+								size="small"
+								variant="outlined"
+							/>
 						)}
-					</CardContent>
-				</Card>
-			)}
+						<Button
+							variant="text"
+							startIcon={<AddIcon />}
+							onClick={() => setAddCarDialogOpen(true)}
+						>
+							Add Car
+						</Button>
+					</Box>
+				</Box>
 
-			{selectedCar &&
-				!loading &&
-				(() => {
-					const carlaCarId =
-						selectedCar?.carla_car_id || selectedCar?.license_plate;
-					const carDisplayName = getCarDisplayName(selectedCar);
-					const telemetry = carlaCarId
-						? telemetryData[carlaCarId]
-						: null;
-					const isCarlaActive = selectedCar.is_active_in_carla;
+				{error && (
+					<Alert
+						severity="error"
+						sx={{ mb: 3 }}
+						onClose={() => setError(null)}
+					>
+						{error}
+					</Alert>
+				)}
 
-					return (
-						<Grid container spacing={3}>
-							{isCarlaActive && (
-								<Grid item xs={12} md={8}>
-									<Card sx={{ height: "100%" }}>
-										<CardHeader
-											title={`Live Camera Feed - ${carDisplayName}`}
-											action={
-												<Chip
-													label="LIVE"
-													color="error"
-													size="small"
-												/>
-											}
-										/>
-										<CardContent>
-											<Box
-												sx={{
-													position: "relative",
-													width: "100%",
-													height: "400px",
-													bgcolor: "black",
-													borderRadius: 1,
-													overflow: "hidden",
-													display: "flex",
-													alignItems: "center",
-													justifyContent: "center",
-												}}
-											>
-												<img
-													ref={(el) =>
-														(videoRefs.current[
-															carlaCarId
-														] = el)
-													}
-													alt={`Live feed from ${carDisplayName}`}
-													style={{
-														width: "100%",
-														height: "100%",
-														objectFit: "cover",
-													}}
-													onError={() => {}}
-												/>
-												{!telemetry && (
-													<Typography
-														position="absolute"
-														color="white"
-														variant="h6"
-													>
-														Waiting for video
-														stream...
-													</Typography>
-												)}
-											</Box>
-										</CardContent>
-									</Card>
-								</Grid>
-							)}
+				{loading && (
+					<Box>
+						<Skeleton
+							variant="rectangular"
+							height={200}
+							sx={{ mb: 2 }}
+						/>
+						<Skeleton variant="rectangular" height={400} />
+					</Box>
+				)}
 
-							{!isCarlaActive && (
-								<Grid item xs={12} md={8}>
-									<Card sx={{ height: "100%" }}>
-										<CardHeader
-											title={`Vehicle Information - ${carDisplayName}`}
-											action={
-												<Chip
-													icon={<CloudOffIcon />}
-													label="Offline"
-													color="default"
-													size="small"
-												/>
-											}
-										/>
-										<CardContent>
-											<Grid container spacing={2}>
-												<Grid item xs={6} md={3}>
-													<Typography
-														variant="body2"
-														color="textSecondary"
-													>
-														Make
-													</Typography>
-													<Typography variant="h6">
-														{selectedCar.make ||
-															"N/A"}
-													</Typography>
-												</Grid>
-												<Grid item xs={6} md={3}>
-													<Typography
-														variant="body2"
-														color="textSecondary"
-													>
-														Model
-													</Typography>
-													<Typography variant="h6">
-														{selectedCar.model ||
-															"N/A"}
-													</Typography>
-												</Grid>
-												<Grid item xs={6} md={3}>
-													<Typography
-														variant="body2"
-														color="textSecondary"
-													>
-														Year
-													</Typography>
-													<Typography variant="h6">
-														{selectedCar.year ||
-															"N/A"}
-													</Typography>
-												</Grid>
-												<Grid item xs={6} md={3}>
-													<Typography
-														variant="body2"
-														color="textSecondary"
-													>
-														Color
-													</Typography>
-													<Typography variant="h6">
-														{selectedCar.color ||
-															"N/A"}
-													</Typography>
-												</Grid>
-												<Grid item xs={12}>
-													<Alert
-														severity="info"
-														icon={
-															<VideocamOffIcon />
-														}
-													>
-														Live video feed and
-														telemetry are only
-														available when CARLA
-														bridge is connected.
-														This vehicle is
-														registered in the
-														database.
-													</Alert>
-												</Grid>
-											</Grid>
-										</CardContent>
-									</Card>
-								</Grid>
-							)}
+				{!loading && (
+					<Card sx={{ mb: 4 }}>
+						<CardHeader
+							title="Your Vehicles"
+							action={
+								<Tooltip title="Refresh Vehicle List">
+									<IconButton onClick={fetchCarList}>
+										<RefreshIcon />
+									</IconButton>
+								</Tooltip>
+							}
+						/>
+						<CardContent>
+							{cars.length > 0 ? (
+								<Box
+									sx={{
+										display: "flex",
+										gap: 2,
+										flexWrap: "wrap",
+									}}
+								>
+									{cars.map((car) => {
+										const carlaCarId =
+											car.carla_car_id ||
+											car.license_plate;
+										const isSelected =
+											selectedCar?.car_id ===
+												car.car_id ||
+											selectedCar?.license_plate ===
+												car.license_plate;
+										const telemetry = carlaCarId
+											? telemetryData[carlaCarId]
+											: null;
 
-							<Grid item xs={12} md={isCarlaActive ? 4 : 12}>
-								<Card sx={{ mb: 3 }}>
-									<CardHeader
-										title="Vehicle Telemetry"
-										action={
-											isCarlaActive && telemetry ? (
-												<Chip
-													label={getStatusText(
-														telemetry?.speed || 0
-													)}
-													color={getStatusColor(
-														telemetry?.speed || 0
-													)}
-												/>
-											) : (
-												<Chip
-													label="Database"
-													color="default"
-													size="small"
-												/>
-											)
-										}
+										return (
+											<CarListItem
+												key={car.car_id || carlaCarId}
+												car={car}
+												isSelected={isSelected}
+												telemetry={telemetry}
+												onSelect={setSelectedCar}
+												onRemove={removeCar}
+												onEdit={openEditDialog}
+											/>
+										);
+									})}
+								</Box>
+							) : (
+								<Box sx={{ textAlign: "center", py: 4 }}>
+									<CarIcon
+										sx={{
+											fontSize: 48,
+											color: "text.secondary",
+											mb: 2,
+										}}
 									/>
-									<CardContent>
-										{isCarlaActive && telemetry ? (
-											<>
-												<Box sx={{ mb: 3 }}>
-													<Box
-														sx={{
-															display: "flex",
-															alignItems:
-																"center",
-															mb: 1,
+									<Typography
+										variant="h6"
+										color="textSecondary"
+										gutterBottom
+									>
+										No vehicles registered
+									</Typography>
+									<Typography
+										variant="body2"
+										color="textSecondary"
+									>
+										Click "Add Car" to register a new
+										vehicle
+									</Typography>
+								</Box>
+							)}
+						</CardContent>
+					</Card>
+				)}
+
+				{selectedCar &&
+					!loading &&
+					(() => {
+						const carlaCarId =
+							selectedCar?.carla_car_id ||
+							selectedCar?.license_plate;
+						const carDisplayName = getCarDisplayName(selectedCar);
+						const telemetry = carlaCarId
+							? telemetryData[carlaCarId]
+							: null;
+						const isCarlaActive = selectedCar.is_active_in_carla;
+
+						return (
+							<Grid container spacing={3}>
+								{isCarlaActive && (
+									<Grid item xs={12} md={8}>
+										<Card sx={{ height: "100%" }}>
+											<CardHeader
+												title={`Live Camera Feed - ${carDisplayName}`}
+												action={
+													<Chip
+														label="LIVE"
+														color="error"
+														size="small"
+													/>
+												}
+											/>
+											<CardContent>
+												<Box
+													sx={{
+														position: "relative",
+														width: "100%",
+														height: "400px",
+														bgcolor: "black",
+														borderRadius: 1,
+														overflow: "hidden",
+														display: "flex",
+														alignItems: "center",
+														justifyContent:
+															"center",
+													}}
+												>
+													<img
+														ref={(el) =>
+															(videoRefs.current[
+																carlaCarId
+															] = el)
+														}
+														alt={`Live feed from ${carDisplayName}`}
+														style={{
+															width: "100%",
+															height: "100%",
+															objectFit: "cover",
 														}}
-													>
-														<SpeedIcon
-															color="primary"
-															sx={{ mr: 1 }}
-														/>
+														onError={() => {}}
+													/>
+													{!telemetry && (
+														<Typography
+															position="absolute"
+															color="white"
+															variant="h6"
+														>
+															Waiting for video
+															stream...
+														</Typography>
+													)}
+												</Box>
+											</CardContent>
+										</Card>
+									</Grid>
+								)}
+
+								{!isCarlaActive && (
+									<Grid item xs={12} md={8}>
+										<Card sx={{ height: "100%" }}>
+											<CardHeader
+												title={`Vehicle Information - ${carDisplayName}`}
+												action={
+													<Chip
+														icon={<CloudOffIcon />}
+														label="Offline"
+														color="default"
+														size="small"
+													/>
+												}
+											/>
+											<CardContent>
+												<Grid container spacing={2}>
+													<Grid item xs={6} md={3}>
 														<Typography
 															variant="body2"
 															color="textSecondary"
 														>
-															Current Speed
+															Make
 														</Typography>
-													</Box>
-													<Typography
-														variant="h4"
-														color="primary"
-														gutterBottom
-													>
-														{telemetry?.speed || 0}{" "}
-														km/h
-													</Typography>
-													<LinearProgress
-														variant="determinate"
-														value={Math.min(
-															((telemetry?.speed ||
-																0) /
-																100) *
-																100,
-															100
-														)}
-														sx={{
-															height: 8,
-															borderRadius: 4,
-															mb: 1,
-														}}
-													/>
-												</Box>
-											</>
-										) : (
-											<Alert severity="info">
-												Live telemetry unavailable.
-												Using stored location data from
-												database.
-											</Alert>
-										)}
+														<Typography variant="h6">
+															{selectedCar.make ||
+																"N/A"}
+														</Typography>
+													</Grid>
+													<Grid item xs={6} md={3}>
+														<Typography
+															variant="body2"
+															color="textSecondary"
+														>
+															Model
+														</Typography>
+														<Typography variant="h6">
+															{selectedCar.model ||
+																"N/A"}
+														</Typography>
+													</Grid>
+													<Grid item xs={6} md={3}>
+														<Typography
+															variant="body2"
+															color="textSecondary"
+														>
+															Year
+														</Typography>
+														<Typography variant="h6">
+															{selectedCar.year ||
+																"N/A"}
+														</Typography>
+													</Grid>
+													<Grid item xs={6} md={3}>
+														<Typography
+															variant="body2"
+															color="textSecondary"
+														>
+															Color
+														</Typography>
+														<Typography variant="h6">
+															{selectedCar.color ||
+																"N/A"}
+														</Typography>
+													</Grid>
+													<Grid item xs={12}>
+														<Alert
+															severity="info"
+															icon={
+																<VideocamOffIcon />
+															}
+														>
+															Live video feed and
+															telemetry are only
+															available when CARLA
+															bridge is connected.
+															This vehicle is
+															registered in the
+															database.
+														</Alert>
+													</Grid>
+												</Grid>
+											</CardContent>
+										</Card>
+									</Grid>
+								)}
 
-										<Box sx={{ mb: 2 }}>
+								<Grid item xs={12} md={isCarlaActive ? 4 : 12}>
+									<Card sx={{ mb: 3 }}>
+										<CardHeader
+											title="Vehicle Telemetry"
+											action={
+												isCarlaActive && telemetry ? (
+													<Chip
+														label={getStatusText(
+															telemetry?.speed ||
+																0
+														)}
+														color={getStatusColor(
+															telemetry?.speed ||
+																0
+														)}
+													/>
+												) : (
+													<Chip
+														label="Database"
+														color="default"
+														size="small"
+													/>
+												)
+											}
+										/>
+										<CardContent>
+											{isCarlaActive && telemetry ? (
+												<>
+													<Box sx={{ mb: 3 }}>
+														<Box
+															sx={{
+																display: "flex",
+																alignItems:
+																	"center",
+																mb: 1,
+															}}
+														>
+															<SpeedIcon
+																color="primary"
+																sx={{ mr: 1 }}
+															/>
+															<Typography
+																variant="body2"
+																color="textSecondary"
+															>
+																Current Speed
+															</Typography>
+														</Box>
+														<Typography
+															variant="h4"
+															color="primary"
+															gutterBottom
+														>
+															{telemetry?.speed ||
+																0}{" "}
+															km/h
+														</Typography>
+														<LinearProgress
+															variant="determinate"
+															value={Math.min(
+																((telemetry?.speed ||
+																	0) /
+																	100) *
+																	100,
+																100
+															)}
+															sx={{
+																height: 8,
+																borderRadius: 4,
+																mb: 1,
+															}}
+														/>
+													</Box>
+												</>
+											) : (
+												<Alert severity="info">
+													Live telemetry unavailable.
+													Using stored location data
+													from database.
+												</Alert>
+											)}
+
+											<Box sx={{ mb: 2 }}>
+												<Box
+													sx={{
+														display: "flex",
+														alignItems: "center",
+														mb: 1,
+													}}
+												>
+													<LocationIcon
+														color="secondary"
+														sx={{ mr: 1 }}
+													/>
+													<Typography
+														variant="body2"
+														color="textSecondary"
+													>
+														Location Coordinates
+													</Typography>
+												</Box>
+												<Grid container spacing={2}>
+													<Grid item xs={6}>
+														<Typography
+															variant="body2"
+															color="textSecondary"
+														>
+															Latitude
+														</Typography>
+														<Typography
+															variant="h6"
+															fontFamily="monospace"
+														>
+															{telemetry?.lat !==
+																undefined &&
+															telemetry?.lat !==
+																null
+																? Number(
+																		telemetry.lat
+																  ).toFixed(6)
+																: selectedCar.current_latitude !==
+																		undefined &&
+																  selectedCar.current_latitude !==
+																		null
+																? Number(
+																		selectedCar.current_latitude
+																  ).toFixed(6)
+																: "N/A"}
+														</Typography>
+													</Grid>
+													<Grid item xs={6}>
+														<Typography
+															variant="body2"
+															color="textSecondary"
+														>
+															Longitude
+														</Typography>
+														<Typography
+															variant="h6"
+															fontFamily="monospace"
+														>
+															{telemetry?.lon !==
+																undefined &&
+															telemetry?.lon !==
+																null
+																? Number(
+																		telemetry.lon
+																  ).toFixed(6)
+																: selectedCar.current_longitude !==
+																		undefined &&
+																  selectedCar.current_longitude !==
+																		null
+																? Number(
+																		selectedCar.current_longitude
+																  ).toFixed(6)
+																: "N/A"}
+														</Typography>
+													</Grid>
+												</Grid>
+											</Box>
+
+											<Box>
+												<Typography
+													variant="body2"
+													color="textSecondary"
+													gutterBottom
+												>
+													Last Updated
+												</Typography>
+												<Typography variant="body2">
+													{telemetry?.timestamp
+														? new Date(
+																telemetry.timestamp *
+																	1000
+														  ).toLocaleTimeString()
+														: selectedCar.last_updated
+														? new Date(
+																selectedCar.last_updated
+														  ).toLocaleString()
+														: "Never"}
+												</Typography>
+											</Box>
+										</CardContent>
+									</Card>
+
+									<Card>
+										<CardHeader title="Quick Actions" />
+										<CardContent>
 											<Box
 												sx={{
 													display: "flex",
-													alignItems: "center",
-													mb: 1,
+													gap: 1,
+													flexWrap: "wrap",
 												}}
 											>
-												<LocationIcon
-													color="secondary"
-													sx={{ mr: 1 }}
-												/>
+												<Button
+													sx={{ color: "#000000" }}
+													color="primary"
+													variant="contained"
+													startIcon={<RefreshIcon />}
+													onClick={fetchCarList}
+												>
+													Refresh
+												</Button>
+												<Button
+													variant="contained"
+													sx={{ color: "#000000" }}
+													color="error"
+													startIcon={<DeleteIcon />}
+													onClick={() =>
+														removeCar(selectedCar)
+													}
+												>
+													Remove Car
+												</Button>
+												<Button
+													variant="contained"
+													sx={{ color: "#000000" }}
+													color="info"
+													startIcon={<EditIcon />}
+													onClick={openEditDialog}
+													disabled={!selectedCar}
+												>
+													Edit Details
+												</Button>
+											</Box>
+										</CardContent>
+									</Card>
+								</Grid>
+
+								<Grid item xs={12}>
+									<Card>
+										<CardHeader title="Vehicle Location" />
+										<CardContent>
+											{!mapCoordinates ? (
+												<Box
+													sx={{
+														display: "flex",
+														justifyContent:
+															"center",
+														alignItems: "center",
+														height: 400,
+													}}
+												>
+													<CircularProgress />
+												</Box>
+											) : !canUseMaps ? (
+												<Alert severity="warning">
+													Set{" "}
+													<code>
+														REACT_APP_GOOGLE_MAPS_API_KEY
+													</code>{" "}
+													in your frontend environment
+													to enable map rendering.
+												</Alert>
+											) : mapLoadError ? (
+												<Alert severity="error">
+													Failed to load Google Maps:{" "}
+													{mapLoadError.message}
+												</Alert>
+											) : !isMapLoaded ? (
+												<Box
+													sx={{
+														display: "flex",
+														justifyContent:
+															"center",
+														py: 4,
+													}}
+												>
+													<CircularProgress />
+												</Box>
+											) : (
+												<Box
+													sx={{
+														width: "100%",
+														height: 400,
+														borderRadius: 1,
+														overflow: "hidden",
+													}}
+												>
+													<GoogleMap
+														mapContainerStyle={{
+															width: "100%",
+															height: "100%",
+														}}
+														center={
+															mapCoordinates ||
+															defaultMapCenter
+														}
+														zoom={16}
+														options={{
+															fullscreenControl: false,
+															mapTypeControl: false,
+															streetViewControl: false,
+														}}
+													>
+														<MarkerF
+															position={
+																mapCoordinates
+															}
+															label={
+																selectedCar?.model ||
+																selectedCar?.license_plate ||
+																"Vehicle"
+															}
+														/>
+													</GoogleMap>
+												</Box>
+											)}
+										</CardContent>
+									</Card>
+								</Grid>
+
+								<Grid item xs={12}>
+									<Card>
+										<CardHeader title="Recent Alerts" />
+										<CardContent>
+											{alerts &&
+											alerts.length === 0 &&
+											!loadingAlerts ? (
 												<Typography
 													variant="body2"
 													color="textSecondary"
 												>
-													Location Coordinates
+													No alerts available.
 												</Typography>
-											</Box>
-											<Grid container spacing={2}>
-												<Grid item xs={6}>
-													<Typography
-														variant="body2"
-														color="textSecondary"
+											) : (
+												<>
+													<Box
+														sx={{
+															maxHeight: 300,
+															overflowY: "auto",
+														}}
 													>
-														Latitude
-													</Typography>
-													<Typography
-														variant="h6"
-														fontFamily="monospace"
-													>
-														{telemetry?.lat !==
-															undefined &&
-														telemetry?.lat !== null
-															? Number(
-																	telemetry.lat
-															  ).toFixed(6)
-															: selectedCar.current_latitude !==
-																	undefined &&
-															  selectedCar.current_latitude !==
-																	null
-															? Number(
-																	selectedCar.current_latitude
-															  ).toFixed(6)
-															: "N/A"}
-													</Typography>
-												</Grid>
-												<Grid item xs={6}>
-													<Typography
-														variant="body2"
-														color="textSecondary"
-													>
-														Longitude
-													</Typography>
-													<Typography
-														variant="h6"
-														fontFamily="monospace"
-													>
-														{telemetry?.lon !==
-															undefined &&
-														telemetry?.lon !== null
-															? Number(
-																	telemetry.lon
-															  ).toFixed(6)
-															: selectedCar.current_longitude !==
-																	undefined &&
-															  selectedCar.current_longitude !==
-																	null
-															? Number(
-																	selectedCar.current_longitude
-															  ).toFixed(6)
-															: "N/A"}
-													</Typography>
-												</Grid>
-											</Grid>
-										</Box>
-
-										<Box>
-											<Typography
-												variant="body2"
-												color="textSecondary"
-												gutterBottom
-											>
-												Last Updated
-											</Typography>
-											<Typography variant="body2">
-												{telemetry?.timestamp
-													? new Date(
-															telemetry.timestamp *
-																1000
-													  ).toLocaleTimeString()
-													: selectedCar.last_updated
-													? new Date(
-															selectedCar.last_updated
-													  ).toLocaleString()
-													: "Never"}
-											</Typography>
-										</Box>
-									</CardContent>
-								</Card>
-
-								<Card>
-									<CardHeader title="Quick Actions" />
-									<CardContent>
-										<Box
-											sx={{
-												display: "flex",
-												gap: 1,
-												flexWrap: "wrap",
-											}}
-										>
-											<Button
-												sx={{ color: "#000000" }}
-												color="primary"
-												variant="contained"
-												startIcon={<RefreshIcon />}
-												onClick={fetchCarList}
-											>
-												Refresh
-											</Button>
-											<Button
-												variant="contained"
-												sx={{ color: "#000000" }}
-												color="error"
-												startIcon={<DeleteIcon />}
-												onClick={() =>
-													removeCar(selectedCar)
-												}
-											>
-												Remove Car
-											</Button>
-											<Button
-												variant="contained"
-												sx={{ color: "#000000" }}
-												color="info"
-												startIcon={<EditIcon />}
-												onClick={openEditDialog}
-												disabled={!selectedCar}
-											>
-												Edit Details
-											</Button>
-										</Box>
-									</CardContent>
-								</Card>
+														{alerts.map((alert) => (
+															<Card
+																key={
+																	alert.alert_id
+																}
+																sx={{
+																	mb: 2,
+																}}
+															>
+																<CardContent>
+																	<Typography
+																		variant="h6"
+																		gutterBottom
+																	>
+																		Alert
+																		Type:{" "}
+																		{
+																			alert.alert_type
+																		}
+																	</Typography>
+																	<Typography
+																		variant="body2"
+																		color="textSecondary"
+																	>
+																		Confidence:{" "}
+																		{Math.round(
+																			alert.confidence_score *
+																				100
+																		)}
+																		%
+																	</Typography>
+																	<Typography
+																		variant="body2"
+																		color="textSecondary"
+																	>
+																		Status:{" "}
+																		{
+																			alert.status
+																		}
+																	</Typography>
+																	<Typography
+																		variant="body2"
+																		color="textSecondary"
+																	>
+																		Created
+																		At:{" "}
+																		{new Date(
+																			alert.createdAt
+																		).toLocaleString()}
+																	</Typography>
+																</CardContent>
+															</Card>
+														))}
+													</Box>
+													{alerts &&
+														alerts.length < 100 && (
+															<Button
+																onClick={() =>
+																	fetchAlerts(
+																		alertPage +
+																			1
+																	)
+																}
+																disabled={
+																	loadingAlerts
+																}
+															>
+																{loadingAlerts
+																	? "Loading..."
+																	: "Load More"}
+															</Button>
+														)}
+												</>
+											)}
+										</CardContent>
+									</Card>
+								</Grid>
 							</Grid>
+						);
+					})()}
 
-							<Grid item xs={12}>
-								<Card>
-									<CardHeader title="Vehicle Location" />
-									<CardContent>
-										{!mapCoordinates ? (
-											<Alert severity="warning">
-												No location data available for
-												this vehicle. Please update the
-												location in the car details.
-											</Alert>
-										) : !canUseMaps ? (
-											<Alert severity="warning">
-												Set{" "}
-												<code>
-													REACT_APP_GOOGLE_MAPS_API_KEY
-												</code>{" "}
-												in your frontend environment to
-												enable map rendering.
-											</Alert>
-										) : mapLoadError ? (
-											<Alert severity="error">
-												Failed to load Google Maps:{" "}
-												{mapLoadError.message}
-											</Alert>
-										) : !isMapLoaded ? (
-											<Box
-												sx={{
-													display: "flex",
-													justifyContent: "center",
-													py: 4,
-												}}
-											>
-												<CircularProgress />
-											</Box>
-										) : (
-											<Box
-												sx={{
-													width: "100%",
-													height: 400,
-													borderRadius: 1,
-													overflow: "hidden",
-												}}
-											>
-												<GoogleMap
-													mapContainerStyle={{
-														width: "100%",
-														height: "100%",
-													}}
-													center={
-														mapCoordinates ||
-														defaultMapCenter
-													}
-													zoom={16}
-													options={{
-														fullscreenControl: false,
-														mapTypeControl: false,
-														streetViewControl: false,
-													}}
-												>
-													<MarkerF
-														position={
-															mapCoordinates
-														}
-														label={
-															selectedCar?.model ||
-															selectedCar?.license_plate ||
-															"Vehicle"
-														}
-													/>
-												</GoogleMap>
-											</Box>
-										)}
-									</CardContent>
-								</Card>
+				<Dialog
+					open={addCarDialogOpen}
+					onClose={() => setAddCarDialogOpen(false)}
+					maxWidth="sm"
+					fullWidth
+				>
+					<DialogTitle>Add New Vehicle</DialogTitle>
+					<DialogContent>
+						<TextField
+							autoFocus
+							margin="dense"
+							label="License Plate / Car ID"
+							type="text"
+							fullWidth
+							variant="outlined"
+							value={newCarId}
+							onChange={(e) => setNewCarId(e.target.value)}
+							placeholder="e.g., CAR2000"
+							helperText="Enter a unique identifier for the vehicle"
+							sx={{ mb: 3 }}
+						/>
+						<FormControl fullWidth sx={{ mb: 3 }}>
+							<InputLabel id="car-model-label">
+								Car Model
+							</InputLabel>
+							<Select
+								size="large"
+								labelId="car-model-label"
+								id="car-model-select"
+								value={newCarModel}
+								label="Car Model"
+								onChange={(e) => setNewCarModel(e.target.value)}
+							>
+								{CARLA_MODELS.map((model) => (
+									<MenuItem
+										key={model.value}
+										value={model.value}
+									>
+										{model.label} (
+										{model.value.split(".").pop()})
+									</MenuItem>
+								))}
+							</Select>
+							<Typography
+								variant="caption"
+								color="textSecondary"
+								sx={{ mt: 1, display: "block" }}
+							>
+								Select the CARLA blueprint for the new vehicle
+								(if CARLA is available).
+							</Typography>
+						</FormControl>
+						<Typography
+							variant="h6"
+							gutterBottom
+							sx={{ mt: 2, mb: 1 }}
+						>
+							Initial Location
+						</Typography>
+						<Grid container spacing={2}>
+							<Grid item xs={6}>
+								<TextField
+									margin="dense"
+									label="Latitude"
+									type="number"
+									fullWidth
+									variant="outlined"
+									value={newCarLat}
+									onChange={(e) =>
+										setNewCarLat(e.target.value)
+									}
+									placeholder="e.g., 37.7749"
+								/>
+							</Grid>
+							<Grid item xs={6}>
+								<TextField
+									margin="dense"
+									label="Longitude"
+									type="number"
+									fullWidth
+									variant="outlined"
+									value={newCarLon}
+									onChange={(e) =>
+										setNewCarLon(e.target.value)
+									}
+									placeholder="e.g., -122.4194"
+								/>
 							</Grid>
 						</Grid>
-					);
-				})()}
-
-			<Dialog
-				open={addCarDialogOpen}
-				onClose={() => setAddCarDialogOpen(false)}
-				maxWidth="sm"
-				fullWidth
-			>
-				<DialogTitle>Add New Vehicle</DialogTitle>
-				<DialogContent>
-					<TextField
-						autoFocus
-						margin="dense"
-						label="License Plate / Car ID"
-						type="text"
-						fullWidth
-						variant="outlined"
-						value={newCarId}
-						onChange={(e) => setNewCarId(e.target.value)}
-						placeholder="e.g., CAR2000"
-						helperText="Enter a unique identifier for the vehicle"
-						sx={{ mb: 3 }}
-					/>
-					<FormControl fullWidth sx={{ mb: 3 }}>
-						<InputLabel id="car-model-label">Car Model</InputLabel>
-						<Select
-							size="large"
-							labelId="car-model-label"
-							id="car-model-select"
-							value={newCarModel}
-							label="Car Model"
-							onChange={(e) => setNewCarModel(e.target.value)}
-						>
-							{CARLA_MODELS.map((model) => (
-								<MenuItem key={model.value} value={model.value}>
-									{model.label} (
-									{model.value.split(".").pop()})
-								</MenuItem>
-							))}
-						</Select>
 						<Typography
 							variant="caption"
 							color="textSecondary"
 							sx={{ mt: 1, display: "block" }}
 						>
-							Select the CARLA blueprint for the new vehicle (if
-							CARLA is available).
+							Note: For CARLA, use map coordinates (X, Y). For
+							real-world locations, use standard
+							latitude/longitude.
 						</Typography>
-					</FormControl>
-					<Typography variant="h6" gutterBottom sx={{ mt: 2, mb: 1 }}>
-						Initial Location
-					</Typography>
-					<Grid container spacing={2}>
-						<Grid item xs={6}>
-							<TextField
-								margin="dense"
-								label="Latitude"
-								type="number"
-								fullWidth
-								variant="outlined"
-								value={newCarLat}
-								onChange={(e) => setNewCarLat(e.target.value)}
-								placeholder="e.g., 37.7749"
-							/>
-						</Grid>
-						<Grid item xs={6}>
-							<TextField
-								margin="dense"
-								label="Longitude"
-								type="number"
-								fullWidth
-								variant="outlined"
-								value={newCarLon}
-								onChange={(e) => setNewCarLon(e.target.value)}
-								placeholder="e.g., -122.4194"
-							/>
-						</Grid>
-					</Grid>
-					<Typography
-						variant="caption"
-						color="textSecondary"
-						sx={{ mt: 1, display: "block" }}
-					>
-						Note: For CARLA, use map coordinates (X, Y). For
-						real-world locations, use standard latitude/longitude.
-					</Typography>
-				</DialogContent>
-				<DialogActions>
-					<Button onClick={() => setAddCarDialogOpen(false)}>
-						Cancel
-					</Button>
-					<Button
-						onClick={addNewCar}
-						variant="contained"
-						disabled={!newCarId.trim()}
-					>
-						Add Vehicle
-					</Button>
-				</DialogActions>
-			</Dialog>
+					</DialogContent>
+					<DialogActions>
+						<Button onClick={() => setAddCarDialogOpen(false)}>
+							Cancel
+						</Button>
+						<Button
+							onClick={addNewCar}
+							variant="contained"
+							disabled={!newCarId.trim()}
+						>
+							Add Vehicle
+						</Button>
+					</DialogActions>
+				</Dialog>
 
-			<Dialog
-				open={editCarDialogOpen}
-				onClose={() => setEditCarDialogOpen(false)}
-				maxWidth="sm"
-				fullWidth
-			>
-				<DialogTitle>Edit Vehicle Details</DialogTitle>
-				<DialogContent>
-					<Grid container spacing={2}>
-						<Grid item xs={12} md={6}>
-							<TextField
-								margin="dense"
-								label="Make"
-								fullWidth
-								variant="outlined"
-								value={editCarForm.make}
-								onChange={(e) =>
-									handleEditFieldChange(
-										"make",
-										e.target.value
-									)
-								}
-							/>
-						</Grid>
-						<Grid item xs={12} md={6}>
-							<TextField
-								margin="dense"
-								label="Model"
-								fullWidth
-								variant="outlined"
-								value={editCarForm.model}
-								onChange={(e) =>
-									handleEditFieldChange(
-										"model",
-										e.target.value
-									)
-								}
-							/>
-						</Grid>
-						<Grid item xs={12} md={6}>
-							<TextField
-								margin="dense"
-								label="Year"
-								type="number"
-								fullWidth
-								variant="outlined"
-								value={editCarForm.year}
-								onChange={(e) =>
-									handleEditFieldChange(
-										"year",
-										e.target.value
-									)
-								}
-							/>
-						</Grid>
-						<Grid item xs={12} md={6}>
-							<TextField
-								margin="dense"
-								label="Color"
-								fullWidth
-								variant="outlined"
-								value={editCarForm.color}
-								onChange={(e) =>
-									handleEditFieldChange(
-										"color",
-										e.target.value
-									)
-								}
-							/>
-						</Grid>
-						<Grid item xs={12} md={6}>
-							<FormControl fullWidth margin="dense">
-								<InputLabel id="car-status-label">
-									Status
-								</InputLabel>
-								<Select
-									labelId="car-status-label"
-									label="Status"
-									value={editCarForm.status}
+				<Dialog
+					open={editCarDialogOpen}
+					onClose={() => setEditCarDialogOpen(false)}
+					maxWidth="sm"
+					fullWidth
+				>
+					<DialogTitle>Edit Vehicle Details</DialogTitle>
+					<DialogContent>
+						<Grid container spacing={2}>
+							<Grid item xs={12} md={6}>
+								<TextField
+									margin="dense"
+									label="Make"
+									fullWidth
+									variant="outlined"
+									value={editCarForm.make}
 									onChange={(e) =>
 										handleEditFieldChange(
-											"status",
+											"make",
 											e.target.value
 										)
 									}
-								>
-									<MenuItem value="active">Active</MenuItem>
-									<MenuItem value="inactive">
-										Inactive
-									</MenuItem>
-									<MenuItem value="maintenance">
-										Maintenance
-									</MenuItem>
-								</Select>
-							</FormControl>
+								/>
+							</Grid>
+							<Grid item xs={12} md={6}>
+								<TextField
+									margin="dense"
+									label="Model"
+									fullWidth
+									variant="outlined"
+									value={editCarForm.model}
+									onChange={(e) =>
+										handleEditFieldChange(
+											"model",
+											e.target.value
+										)
+									}
+								/>
+							</Grid>
+							<Grid item xs={12} md={6}>
+								<TextField
+									margin="dense"
+									label="Year"
+									type="number"
+									fullWidth
+									variant="outlined"
+									value={editCarForm.year}
+									onChange={(e) =>
+										handleEditFieldChange(
+											"year",
+											e.target.value
+										)
+									}
+								/>
+							</Grid>
+							<Grid item xs={12} md={6}>
+								<TextField
+									margin="dense"
+									label="Color"
+									fullWidth
+									variant="outlined"
+									value={editCarForm.color}
+									onChange={(e) =>
+										handleEditFieldChange(
+											"color",
+											e.target.value
+										)
+									}
+								/>
+							</Grid>
+							<Grid item xs={12} md={6}>
+								<FormControl fullWidth margin="dense">
+									<InputLabel id="car-status-label">
+										Status
+									</InputLabel>
+									<Select
+										labelId="car-status-label"
+										label="Status"
+										value={editCarForm.status}
+										onChange={(e) =>
+											handleEditFieldChange(
+												"status",
+												e.target.value
+											)
+										}
+									>
+										<MenuItem value="active">
+											Active
+										</MenuItem>
+										<MenuItem value="inactive">
+											Inactive
+										</MenuItem>
+										<MenuItem value="maintenance">
+											Maintenance
+										</MenuItem>
+									</Select>
+								</FormControl>
+							</Grid>
+							<Grid item xs={12} md={6}>
+								<TextField
+									margin="dense"
+									label="License Plate / CARLA ID"
+									fullWidth
+									variant="outlined"
+									value={editCarForm.license_plate}
+									onChange={(e) =>
+										handleEditFieldChange(
+											"license_plate",
+											e.target.value
+										)
+									}
+									helperText="This should match the CARLA car ID"
+								/>
+							</Grid>
+							<Grid item xs={12} md={6}>
+								<TextField
+									margin="dense"
+									label="Latitude"
+									type="number"
+									fullWidth
+									variant="outlined"
+									value={editCarForm.current_latitude}
+									onChange={(e) =>
+										handleEditFieldChange(
+											"current_latitude",
+											e.target.value
+										)
+									}
+									helperText="Optional manual override"
+								/>
+							</Grid>
+							<Grid item xs={12} md={6}>
+								<TextField
+									margin="dense"
+									label="Longitude"
+									type="number"
+									fullWidth
+									variant="outlined"
+									value={editCarForm.current_longitude}
+									onChange={(e) =>
+										handleEditFieldChange(
+											"current_longitude",
+											e.target.value
+										)
+									}
+									helperText="Optional manual override"
+								/>
+							</Grid>
 						</Grid>
-						<Grid item xs={12} md={6}>
-							<TextField
-								margin="dense"
-								label="License Plate / CARLA ID"
-								fullWidth
-								variant="outlined"
-								value={editCarForm.license_plate}
-								onChange={(e) =>
-									handleEditFieldChange(
-										"license_plate",
-										e.target.value
-									)
-								}
-								helperText="This should match the CARLA car ID"
-							/>
-						</Grid>
-						<Grid item xs={12} md={6}>
-							<TextField
-								margin="dense"
-								label="Latitude"
-								type="number"
-								fullWidth
-								variant="outlined"
-								value={editCarForm.current_latitude}
-								onChange={(e) =>
-									handleEditFieldChange(
-										"current_latitude",
-										e.target.value
-									)
-								}
-								helperText="Optional manual override"
-							/>
-						</Grid>
-						<Grid item xs={12} md={6}>
-							<TextField
-								margin="dense"
-								label="Longitude"
-								type="number"
-								fullWidth
-								variant="outlined"
-								value={editCarForm.current_longitude}
-								onChange={(e) =>
-									handleEditFieldChange(
-										"current_longitude",
-										e.target.value
-									)
-								}
-								helperText="Optional manual override"
-							/>
-						</Grid>
-					</Grid>
-				</DialogContent>
-				<DialogActions>
-					<Button onClick={() => setEditCarDialogOpen(false)}>
-						Cancel
-					</Button>
-					<Button variant="contained" onClick={handleSaveEditedCar}>
-						Save Changes
-					</Button>
-				</DialogActions>
-			</Dialog>
+					</DialogContent>
+					<DialogActions>
+						<Button onClick={() => setEditCarDialogOpen(false)}>
+							Cancel
+						</Button>
+						<Button
+							variant="contained"
+							onClick={handleSaveEditedCar}
+						>
+							Save Changes
+						</Button>
+					</DialogActions>
+				</Dialog>
 
-			<Snackbar
-				open={snackbar.open}
-				autoHideDuration={4000}
-				onClose={() => setSnackbar({ ...snackbar, open: false })}
-				message={snackbar.message}
-				anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
-			/>
-		</Container>
+				<Snackbar
+					open={snackbar.open}
+					autoHideDuration={4000}
+					onClose={() => setSnackbar({ ...snackbar, open: false })}
+					message={snackbar.message}
+					anchorOrigin={{
+						vertical: "bottom",
+						horizontal: "center",
+					}}
+				/>
+			</Container>
+		</DashboardLayout>
 	);
 };
 

@@ -14,6 +14,15 @@ const {
 	createTestAlert,
 } = require("../controllers/alertController");
 
+const {
+	googleAuth,
+	googleAuthCallback,
+	requireJWTAuth,
+	getUserInfo,
+	logout,
+	handleWebSocketConnection,
+} = require("./authService");
+
 module.exports = {
 	// Car services
 	registerSmartCar,
@@ -30,4 +39,12 @@ module.exports = {
 	acknowledgeAlert,
 	closeAlert,
 	createTestAlert,
+
+	// Auth services
+	googleAuth,
+	googleAuthCallback,
+	requireJWTAuth,
+	getUserInfo,
+	logout,
+	handleWebSocketConnection,
 };

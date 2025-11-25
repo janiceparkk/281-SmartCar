@@ -27,6 +27,20 @@ async function logAudioAlert(alertData) {
 	}
 }
 
+/** Fetch alerts for a specific car from MongoDB */
+async function getAlertsForCar(carId) {
+	try {
+		const alerts = await Alert.find({ car_id: carId }).sort({
+			createdAt: -1,
+		});
+		return alerts;
+	} catch (error) {
+		console.error(`[DB] Failed to fetch alerts for car ${carId}:`, error);
+		throw new Error("Database read failed");
+	}
+}
+
 module.exports = {
 	logAudioAlert,
+	getAlertsForCar,
 };

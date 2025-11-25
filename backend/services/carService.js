@@ -323,6 +323,51 @@ async function updateCarDetails(carId, data, currentUserId) {
 	return result.rows[0];
 }
 
+/** Delete a car by ID with permission check */
+async function deleteCar(carId, currentUserId) {
+	const userResult = await pgPool.query(
+		`SELECT u.user_id, ur.role_name
+         FROM users u
+         JOIN user_roles ur ON u.role_id = ur.role_id
+         WHERE u.user_id = $1`,
+		[currentUserId]
+	);
+
+	if (userResult.rows.length === 0) {
+		throw new Error("User not found");
+	}
+
+	const userRole = userResult.rows[0].role_name;
+
+	let query = "";
+	let params = [carId];
+
+	if (userRole === "Admin") {
+		query = `
+            DELETE FROM smart_cars
+            WHERE car_id = $1
+            RETURNING *;
+        `;
+	} else {
+		query = `
+            DELETE FROM smart_cars
+            WHERE car_id = $1 AND user_id = $2
+            RETURNING *;
+        `;
+		params.push(currentUserId);
+	}
+
+	const result = await pgPool.query(query, params);
+
+	if (result.rows.length === 0) {
+		throw new Error(
+			"Car not found or you do not have permission to delete it"
+		);
+	}
+
+	return result.rows[0];
+}
+
 module.exports = {
 	registerSmartCar,
 	getSmartCarById,
@@ -331,4 +376,5 @@ module.exports = {
 	getCarsByUserId,
 	getAllCars,
 	updateCarDetails,
+	deleteCar,
 };

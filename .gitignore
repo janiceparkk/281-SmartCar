@@ -15,3 +15,10 @@ frontend/build/*
 carla_venv_37
 
 frontend/package-lock.json
+
+backend/audio_datasets/
+
+backend/audio_datasets/*
+
+backend/venv/
+

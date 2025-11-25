@@ -20,6 +20,7 @@ const aiRouter = require("./routes/aiRoutes");
 
 // Import Services
 const mqttService = require("./services/mqttService");
+const authService = require("./services/authService");
 
 const app = express();
 
@@ -99,81 +100,18 @@ if (!JWT_SECRET) {
 	process.exit(1);
 }
 
-const jwt = require("jsonwebtoken");
-
 // --- OIDC Routes ---
-app.get("/auth/google", passport.authenticate("google"));
-
-app.get(
-	"/auth/google/callback",
-	passport.authenticate("google", {
-		session: false,
-		failureRedirect: "/login",
-	}),
-	(req, res) => {
-		const token = jwt.sign(
-			{
-				id: req.user.id,
-				email: req.user.email,
-				name: req.user.name,
-			},
-			process.env.JWT_SECRET,
-			{ expiresIn: "1d" }
-		);
-
-		// Use first allowed origin or default
-		const frontendUrl =
-			process.env.FRONTEND_URL?.split(",")[0]?.trim() ||
-			"http://localhost:3000";
-		res.redirect(`${frontendUrl}/login?token=${token}`);
-	}
-);
+app.get("/auth/google", authService.googleAuth);
+app.get("/auth/google/callback", authService.googleAuthCallback);
 
 // --- Auth Check Middleware ---
-const requireJWTAuth = (req, res, next) => {
-	const authHeader = req.headers.authorization;
-	if (!authHeader) {
-		return res.status(401).json({ error: "No token provided" });
-	}
-
-	const token = authHeader.split(" ")[1];
-	if (!token) {
-		return res.status(401).json({ error: "Invalid token format" });
-	}
-
-	try {
-		const decoded = jwt.verify(token, process.env.JWT_SECRET);
-		req.user = decoded; // e.g. { id, role }
-		next();
-	} catch (err) {
-		return res.status(403).json({ error: "Invalid or expired token" });
-	}
-};
+const requireJWTAuth = authService.requireJWTAuth;
 
 // --- User Info Endpoint ---
-app.get("/auth/user", (req, res) => {
-	if (req.isAuthenticated()) {
-		res.json({
-			user: req.user,
-			isAuthenticated: true,
-		});
-	} else {
-		res.json({
-			user: null,
-			isAuthenticated: false,
-		});
-	}
-});
+app.get("/auth/user", authService.getUserInfo);
 
 // --- Logout Endpoint ---
-app.post("/auth/logout", (req, res) => {
-	req.logout((err) => {
-		if (err) {
-			return res.status(500).json({ error: "Logout failed" });
-		}
-		res.json({ message: "Logged out successfully" });
-	});
-});
+app.post("/auth/logout", authService.logout);
 
 // PostgreSQL Pool
 const pgPool = new Pool({
@@ -227,14 +165,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/alerts", alertRouter);
 
 // --- WebSocket with Authentication (Optional) ---
-wss.on("connection", (ws, req) => {
-	// You can add authentication to WebSocket connections here
-	console.log("[WS] New client connected");
-
-	ws.on("message", (message) => {
-		// Handle messages
-	});
-});
+wss.on("connection", authService.handleWebSocketConnection);
 
 // --- Start Server ---
 server.listen(PORT, async () => {

@@ -207,6 +207,8 @@ router.get("/carla", async (req, res) => {
 });
 
 // PUT /api/cars/:carId (update details)
+const { deleteCar } = require("../services/carService");
+
 router.put("/:carId", async (req, res) => {
 	try {
 		const userId = req.user.id;
@@ -225,6 +227,32 @@ router.put("/:carId", async (req, res) => {
 		console.error("Error updating car:", error);
 		res.status(500).json({
 			message: error.message || "Failed to update car.",
+		});
+	}
+});
+
+// DELETE /api/cars/:carId - delete a car
+router.delete("/:carId", async (req, res) => {
+	try {
+		const userId = req.user.id;
+		const carId = parseInt(req.params.carId, 10);
+
+		if (Number.isNaN(carId)) {
+			return res
+				.status(400)
+				.json({ message: "Invalid car ID. Expected a number." });
+		}
+
+		const deletedCar = await deleteCar(carId, userId);
+
+		return res.json({
+			message: "Car deleted successfully.",
+			car: deletedCar,
+		});
+	} catch (error) {
+		console.error("Error deleting car:", error);
+		res.status(500).json({
+			message: error.message || "Failed to delete car.",
 		});
 	}
 });
