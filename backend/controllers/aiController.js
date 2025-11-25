@@ -24,12 +24,14 @@ async function processAudio(req, res) {
 		// Call the AI service for analysis
 		const predictionResult = await analyzeAudio(tempFilePath);
 
-		if (predictionResult && predictionResult.confidence >= CONFIDENCE_THRESHOLD) {
-
+		if (
+			predictionResult &&
+			predictionResult.confidence >= CONFIDENCE_THRESHOLD
+		) {
 			let alertType = predictionResult.prediction;
 			// Translate 'car_crash' to 'collision' to match the schema's preferred term
-			if (alertType === 'car_crash') {
-				alertType = 'collision';
+			if (alertType === "car_crash") {
+				alertType = "collision";
 			}
 
 			const alertData = {
@@ -46,16 +48,21 @@ async function processAudio(req, res) {
 			message: "Audio processed successfully.",
 			analysis: predictionResult,
 		});
-
 	} catch (error) {
 		console.error("[aiController] Error processing audio:", error.message);
-		return res.status(500).json({ message: "An internal error occurred during audio analysis." });
-
+		return res
+			.status(500)
+			.json({
+				message: "An internal error occurred during audio analysis.",
+			});
 	} finally {
 		// Clean up the temporary file
 		fs.unlink(tempFilePath, (err) => {
 			if (err) {
-				console.error(`[aiController] Failed to delete temporary file: ${tempFilePath}`, err);
+				console.error(
+					`[aiController] Failed to delete temporary file: ${tempFilePath}`,
+					err
+				);
 			}
 		});
 	}

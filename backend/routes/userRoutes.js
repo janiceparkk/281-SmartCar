@@ -52,7 +52,6 @@ router.get("/profile", async (req, res) => {
 	}
 });
 
-
 // PUT /api/user/profile
 router.put("/profile", async (req, res) => {
 	try {
@@ -105,6 +104,5 @@ router.put("/profile", async (req, res) => {
 			.json({ message: "Failed to update user profile" });
 	}
 });
-
 
 module.exports = router;

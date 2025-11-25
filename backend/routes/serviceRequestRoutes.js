@@ -5,6 +5,7 @@ const { authMiddleware } = require("./helper");
 const {
 	getServiceRequests,
 	postServiceRequest,
+	patchServiceRequest,
 } = require("../controllers/serviceRequestController");
 
 // Apply authentication middleware to all device routes
@@ -65,6 +66,32 @@ router.get("/", async (req, res) => {
 		res.status(500).json({
 			message:
 				"Failed to retrieve service requests and logs due to server error.",
+		});
+	}
+});
+
+// PATCH /api/serviceRequests/:id
+router.patch("/:id", async (req, res) => {
+	try {
+		const requestId = req.params.id;
+		const { carId, status } = req.body;
+
+		if (!carId || !status) {
+			return res.status(400).json({
+				message: "Missing required fields: carId and status",
+			});
+		}
+
+		const updatedRequest = await patchServiceRequest({
+			requestId,
+			carId,
+			status,
+		});
+		res.status(201).json(updatedRequest);
+	} catch (error) {
+		console.error("Service Request Update Error:", error);
+		res.status(500).json({
+			message: "Failed to update Service Request due to server error.",
 		});
 	}
 });

@@ -86,7 +86,9 @@ async function registerDevice(data) {
 		// Generate MQTT credentials using the auto-generated device_id
 		const mqttCredentials = generateMQTTCredentials(deviceId);
 
-		console.log(`[Device Manager] Registered device: ${deviceId} for car: ${carId}`);
+		console.log(
+			`[Device Manager] Registered device: ${deviceId} for car: ${carId}`
+		);
 
 		return {
 			device: registeredDevice,
@@ -184,7 +186,9 @@ async function getDevices(params) {
 
 		const result = await pgPool.query(query, queryParams);
 
-		console.log(`[Device Manager] Retrieved ${result.rows.length} devices for ${userRole}`);
+		console.log(
+			`[Device Manager] Retrieved ${result.rows.length} devices for ${userRole}`
+		);
 
 		return result.rows;
 	} catch (error) {
@@ -282,7 +286,9 @@ async function getDeviceById(params) {
 			return null;
 		}
 
-		console.log(`[Device Manager] Retrieved device ${deviceId} for ${userRole}`);
+		console.log(
+			`[Device Manager] Retrieved device ${deviceId} for ${userRole}`
+		);
 
 		return result.rows[0];
 	} catch (error) {
@@ -421,7 +427,10 @@ async function submitTelemetry(params) {
 
 		// Update telemetry summary asynchronously (don't wait for it)
 		updateTelemetrySummary(deviceId).catch((err) => {
-			console.error(`Error updating telemetry summary for device ${deviceId}:`, err.message);
+			console.error(
+				`Error updating telemetry summary for device ${deviceId}:`,
+				err.message
+			);
 		});
 
 		return telemetry;
@@ -638,7 +647,10 @@ async function updateDeviceFirmware(params) {
 		}
 
 		// Initiate firmware update
-		const updateResult = await initiateFirmwareUpdate(deviceId, targetVersion);
+		const updateResult = await initiateFirmwareUpdate(
+			deviceId,
+			targetVersion
+		);
 
 		return updateResult;
 	} catch (error) {

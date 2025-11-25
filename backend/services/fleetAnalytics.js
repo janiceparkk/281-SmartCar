@@ -63,7 +63,10 @@ async function getFleetAnalytics(userId, userRole) {
 
 		deviceTypeQuery += ` GROUP BY d.device_type`;
 
-		const deviceTypeResult = await pgPool.query(deviceTypeQuery, queryParams);
+		const deviceTypeResult = await pgPool.query(
+			deviceTypeQuery,
+			queryParams
+		);
 
 		// Get firmware distribution
 		let firmwareQuery = `
@@ -84,7 +87,9 @@ async function getFleetAnalytics(userId, userRole) {
 
 		const firmwareResult = await pgPool.query(firmwareQuery, queryParams);
 
-		console.log(`[Fleet Analytics] Retrieved fleet analytics for ${userRole}`);
+		console.log(
+			`[Fleet Analytics] Retrieved fleet analytics for ${userRole}`
+		);
 
 		return {
 			deviceTypeDistribution: deviceTypeResult.rows,
@@ -128,7 +133,9 @@ async function getFleetMap(userId, userRole) {
 
 		const result = await pgPool.query(query, queryParams);
 
-		console.log(`[Fleet Analytics] Retrieved ${result.rows.length} devices for map`);
+		console.log(
+			`[Fleet Analytics] Retrieved ${result.rows.length} devices for map`
+		);
 
 		return result.rows;
 	} catch (error) {
@@ -197,7 +204,9 @@ async function getDeviceDiagnostics(deviceId) {
 			[deviceId]
 		);
 
-		console.log(`[Fleet Analytics] Retrieved diagnostics for device ${deviceId}`);
+		console.log(
+			`[Fleet Analytics] Retrieved diagnostics for device ${deviceId}`
+		);
 
 		return {
 			device: device,
