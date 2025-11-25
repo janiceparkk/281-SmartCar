@@ -8,7 +8,12 @@ const { pgPool } = require("../config/database");
  */
 async function createCommand(deviceId, commandData) {
 	try {
-		const { command_type, parameters, priority = "normal", timeout = 30 } = commandData;
+		const {
+			command_type,
+			parameters,
+			priority = "normal",
+			timeout = 30,
+		} = commandData;
 
 		// Validate command type
 		const validCommandTypes = [
@@ -68,7 +73,9 @@ async function getCommandStatus(commandId) {
 			return null;
 		}
 
-		console.log(`[Command Processor] Retrieved status for command ${commandId}`);
+		console.log(
+			`[Command Processor] Retrieved status for command ${commandId}`
+		);
 
 		return result.rows[0];
 	} catch (error) {
@@ -108,7 +115,11 @@ async function updateCommandStatus(commandId, status, result = null) {
 				WHERE command_id = $2
 				RETURNING *`;
 			params = [status, commandId];
-		} else if (status === "completed" || status === "failed" || status === "timeout") {
+		} else if (
+			status === "completed" ||
+			status === "failed" ||
+			status === "timeout"
+		) {
 			query = `UPDATE device_commands
 				SET status = $1, completed_at = CURRENT_TIMESTAMP, result = $2
 				WHERE command_id = $3
@@ -124,7 +135,9 @@ async function updateCommandStatus(commandId, status, result = null) {
 
 		const queryResult = await pgPool.query(query, params);
 
-		console.log(`[Command Processor] Updated command ${commandId} status to ${status}`);
+		console.log(
+			`[Command Processor] Updated command ${commandId} status to ${status}`
+		);
 
 		return queryResult.rows[0];
 	} catch (error) {

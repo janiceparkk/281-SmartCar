@@ -139,7 +139,9 @@ async function initiateFirmwareUpdate(deviceId, targetVersion) {
 
 		// Check if already on target version
 		if (device.current_version === targetVersion) {
-			throw new Error(`Device already on firmware version ${targetVersion}`);
+			throw new Error(
+				`Device already on firmware version ${targetVersion}`
+			);
 		}
 
 		// Update device firmware reference

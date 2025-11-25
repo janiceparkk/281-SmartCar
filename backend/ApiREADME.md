@@ -153,7 +153,9 @@ cd relationalDB/
 cd ..
 node server.js
 ```
+
 ### to get into psql
+
 ```bash
 sudo -u postgres psql -d smartcar_db
 ```

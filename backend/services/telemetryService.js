@@ -48,7 +48,9 @@ async function storeTelemetry(deviceId, telemetryData) {
 			[deviceId]
 		);
 
-		console.log(`[Telemetry Service] Stored telemetry for device ${deviceId}`);
+		console.log(
+			`[Telemetry Service] Stored telemetry for device ${deviceId}`
+		);
 
 		return result.rows[0];
 	} catch (error) {
@@ -94,7 +96,9 @@ async function getTelemetry(deviceId, options = {}) {
 
 		const result = await pgPool.query(query, queryParams);
 
-		console.log(`[Telemetry Service] Retrieved ${result.rows.length} records for device ${deviceId}`);
+		console.log(
+			`[Telemetry Service] Retrieved ${result.rows.length} records for device ${deviceId}`
+		);
 
 		return result.rows;
 	} catch (error) {
@@ -127,7 +131,9 @@ async function updateTelemetrySummary(deviceId) {
 
 		const stats = telemetryResult.rows[0];
 
-		console.log(`[Telemetry Service] Computed summary stats for device ${deviceId}`);
+		console.log(
+			`[Telemetry Service] Computed summary stats for device ${deviceId}`
+		);
 
 		// Return computed stats (not stored separately)
 		return {

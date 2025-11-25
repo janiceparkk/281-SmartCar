@@ -1,10 +1,10 @@
-import { useEffect } from "react";
 import axios from "axios";
 import Dashboard from "layouts/dashboard";
 
 import SignUp from "layouts/LoginRegister/SignUp";
 import Login from "layouts/LoginRegister/Login";
 import UserProfile from "layouts/UserProfile";
+import AlertDetails from "layouts/dashboard/components/AlertLogs/alertDetails";
 import LogDetails from "layouts/dashboard/components/ServiceLogs/logDetails";
 
 // IoT Device Management Layouts
@@ -67,7 +67,54 @@ export const getRoutes = () => {
 		try {
 			const token = localStorage.getItem("token");
 			const res = await axios.get(
-				"http://localhost:5000/api/cars/active",
+				`${process.env.REACT_APP_API_URL}/cars/active`,
+				{
+					headers: { Authorization: `Bearer ${token}` },
+				}
+			);
+
+			return res;
+		} catch (error) {
+			return false;
+		}
+	}
+
+	async function fetchActiveAlerts() {
+		try {
+			const token = localStorage.getItem("token");
+			const res = await axios.get(
+				`${process.env.REACT_APP_API_URL}/alerts?status=Active`,
+				{
+					headers: { Authorization: `Bearer ${token}` },
+				}
+			);
+
+			return res;
+		} catch (error) {
+			return false;
+		}
+	}
+
+	async function fetchAlerts() {
+		try {
+			const token = localStorage.getItem("token");
+			const res = await axios.get(
+				`${process.env.REACT_APP_API_URL}/alerts`,
+				{
+					headers: { Authorization: `Bearer ${token}` },
+				}
+			);
+			return res;
+		} catch (error) {
+			return false;
+		}
+	}
+
+	async function fetchActiveAlerts() {
+		try {
+			const token = localStorage.getItem("token");
+			const res = await axios.get(
+				`${process.env.REACT_APP_API_URL}/alerts?status=Active`,
 				{
 					headers: { Authorization: `Bearer ${token}` },
 				}
@@ -83,7 +130,7 @@ export const getRoutes = () => {
 		try {
 			const token = localStorage.getItem("token");
 			const res = await axios.get(
-				"http://localhost:5000/api/devices/active",
+				`${process.env.REACT_APP_API_URL}/devices/active`,
 				{
 					headers: { Authorization: `Bearer ${token}` },
 				}
@@ -100,7 +147,7 @@ export const getRoutes = () => {
 		try {
 			const token = localStorage.getItem("token");
 			const res = await axios.get(
-				"http://localhost:5000/api/serviceRequests?status=In Progress",
+				`${process.env.REACT_APP_API_URL}/serviceRequests?status=In Progress`,
 				{
 					headers: { Authorization: `Bearer ${token}` },
 				}
@@ -126,6 +173,8 @@ export const getRoutes = () => {
 					component={
 						<Dashboard
 							fetchActiveCars={fetchActiveCars}
+							fetchAlerts={fetchAlerts}
+							fetchActiveAlerts={fetchActiveAlerts}
 							fetchActiveRequests={fetchActiveRequests}
 							fetchActiveDevices={fetchActiveDevices}
 						/>
@@ -142,6 +191,12 @@ export const getRoutes = () => {
 		},
 
 		// IoT Device Management (protected)
+		{
+			key: "alert-details",
+			route: "/alerts/:alertId",
+			component: <ProtectedComponent component={<AlertDetails />} />,
+			protected: true,
+		},
 		{
 			type: "collapse",
 			name: "IoT Devices",
@@ -166,7 +221,9 @@ export const getRoutes = () => {
 		{
 			key: "telemetry-dashboard",
 			route: "/iot-devices/:deviceId/telemetry",
-			component: <ProtectedComponent component={<TelemetryDashboard />} />,
+			component: (
+				<ProtectedComponent component={<TelemetryDashboard />} />
+			),
 			protected: true,
 		},
 		{
@@ -184,7 +241,9 @@ export const getRoutes = () => {
 		{
 			key: "firmware-management",
 			route: "/iot-devices/firmware/management",
-			component: <ProtectedComponent component={<FirmwareManagement />} />,
+			component: (
+				<ProtectedComponent component={<FirmwareManagement />} />
+			),
 			protected: true,
 		},
 
