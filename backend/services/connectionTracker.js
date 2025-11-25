@@ -24,7 +24,9 @@ async function recordConnection(deviceId, connectionType = "mqtt") {
 			[deviceId]
 		);
 
-		console.log(`[Connection Tracker] Device ${deviceId} connected via ${connectionType}`);
+		console.log(
+			`[Connection Tracker] Device ${deviceId} connected via ${connectionType}`
+		);
 
 		return result.rows[0];
 	} catch (error) {
@@ -86,7 +88,9 @@ async function updateHeartbeat(deviceId) {
 			throw new Error(`Device ${deviceId} not found`);
 		}
 
-		console.log(`[Connection Tracker] Heartbeat updated for device ${deviceId}`);
+		console.log(
+			`[Connection Tracker] Heartbeat updated for device ${deviceId}`
+		);
 
 		return result.rows[0];
 	} catch (error) {

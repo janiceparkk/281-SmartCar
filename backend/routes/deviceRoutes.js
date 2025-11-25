@@ -19,7 +19,7 @@ const {
 	getFleetHealthOverview,
 	getFleetAnalyticsData,
 	getFleetMapData,
-	getDeviceDiagnosticsData
+	getDeviceDiagnosticsData,
 } = require("../controllers/deviceController");
 
 // Apply authentication middleware to all device routes
@@ -33,12 +33,7 @@ router.post("/register", async (req, res) => {
 		const userId = req.user.id;
 
 		// Extract device data from request body
-		const {
-			deviceType,
-			carId,
-			firmwareVersion,
-			certificate,
-		} = req.body;
+		const { deviceType, carId, firmwareVersion, certificate } = req.body;
 
 		// Validate required fields
 		if (!deviceType || !carId) {
@@ -78,7 +73,9 @@ router.post("/register", async (req, res) => {
 	} catch (error) {
 		console.error("Device Registration Error:", error.message);
 		res.status(500).json({
-			message: error.message || "Failed to register device due to server error.",
+			message:
+				error.message ||
+				"Failed to register device due to server error.",
 		});
 	}
 });
@@ -98,7 +95,7 @@ router.get("/", async (req, res) => {
 			userId,
 			carId,
 			deviceType,
-			status
+			status,
 		});
 
 		res.status(200).json({
@@ -150,7 +147,7 @@ router.get("/:deviceId", async (req, res) => {
 		const device = await getDeviceById({
 			deviceId,
 			userRole,
-			userId
+			userId,
 		});
 
 		if (!device) {
@@ -188,7 +185,7 @@ router.get("/:deviceId/status", async (req, res) => {
 		const status = await getDeviceStatus({
 			deviceId,
 			userRole,
-			userId
+			userId,
 		});
 
 		if (!status) {
@@ -226,7 +223,7 @@ router.post("/:deviceId/heartbeat", async (req, res) => {
 		const updatedDevice = await updateDeviceHeartbeat({
 			deviceId,
 			userRole,
-			userId
+			userId,
 		});
 
 		if (!updatedDevice) {
@@ -271,7 +268,7 @@ router.post("/:deviceId/telemetry", async (req, res) => {
 			deviceId,
 			userRole,
 			userId,
-			telemetryData
+			telemetryData,
 		});
 
 		if (!telemetry) {
@@ -320,7 +317,7 @@ router.get("/:deviceId/telemetry", async (req, res) => {
 			deviceId,
 			userRole,
 			userId,
-			options
+			options,
 		});
 
 		if (telemetry === null) {
@@ -369,7 +366,7 @@ router.post("/:deviceId/commands", async (req, res) => {
 			deviceId,
 			userRole,
 			userId,
-			commandData
+			commandData,
 		});
 
 		if (!command) {
@@ -385,7 +382,8 @@ router.post("/:deviceId/commands", async (req, res) => {
 	} catch (error) {
 		console.error("Send Command Error:", error.message);
 		res.status(500).json({
-			message: error.message || "Failed to send command due to server error.",
+			message:
+				error.message || "Failed to send command due to server error.",
 		});
 	}
 });
@@ -409,7 +407,7 @@ router.get("/:deviceId/commands/:commandId/status", async (req, res) => {
 			deviceId,
 			commandId,
 			userRole,
-			userId
+			userId,
 		});
 
 		if (!command) {
@@ -446,7 +444,8 @@ router.get("/firmware/versions", async (req, res) => {
 	} catch (error) {
 		console.error("Get Firmware Versions Error:", error.message);
 		res.status(500).json({
-			message: "Failed to retrieve firmware versions due to server error.",
+			message:
+				"Failed to retrieve firmware versions due to server error.",
 		});
 	}
 });
@@ -482,7 +481,9 @@ router.post("/firmware/versions", async (req, res) => {
 	} catch (error) {
 		console.error("Create Firmware Version Error:", error.message);
 		res.status(500).json({
-			message: error.message || "Failed to create firmware version due to server error.",
+			message:
+				error.message ||
+				"Failed to create firmware version due to server error.",
 		});
 	}
 });
@@ -513,7 +514,7 @@ router.post("/:deviceId/firmware/update", async (req, res) => {
 			deviceId,
 			userRole,
 			userId,
-			targetVersion: target_version
+			targetVersion: target_version,
 		});
 
 		if (!updateResult) {
@@ -529,7 +530,9 @@ router.post("/:deviceId/firmware/update", async (req, res) => {
 	} catch (error) {
 		console.error("Update Firmware Error:", error.message);
 		res.status(500).json({
-			message: error.message || "Failed to update firmware due to server error.",
+			message:
+				error.message ||
+				"Failed to update firmware due to server error.",
 		});
 	}
 });
@@ -615,7 +618,7 @@ router.get("/:deviceId/diagnostics", async (req, res) => {
 		const diagnostics = await getDeviceDiagnosticsData({
 			deviceId,
 			userRole,
-			userId
+			userId,
 		});
 
 		if (!diagnostics) {
@@ -631,7 +634,8 @@ router.get("/:deviceId/diagnostics", async (req, res) => {
 	} catch (error) {
 		console.error("Get Device Diagnostics Error:", error.message);
 		res.status(500).json({
-			message: "Failed to retrieve device diagnostics due to server error.",
+			message:
+				"Failed to retrieve device diagnostics due to server error.",
 		});
 	}
 });

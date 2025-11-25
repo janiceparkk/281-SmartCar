@@ -69,8 +69,6 @@ async function registerUser({
 	}
 }
 
-
-
 /** Authenticates user against PostgreSQL */
 async function authenticateUser(email, password) {
 	try {

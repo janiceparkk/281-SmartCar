@@ -18,7 +18,7 @@ export default function useServiceLogsData() {
 				}
 
 				const res = await axios.get(
-					"http://localhost:5000/api/serviceRequests",
+					`${process.env.REACT_APP_API_URL}/serviceRequests`,
 					{
 						headers: { Authorization: `Bearer ${token}` },
 					}

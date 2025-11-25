@@ -42,13 +42,19 @@ function analyzeAudio(audioFilePath) {
 			}
 
 			if (stderrData) {
-				console.warn(`[aiService] Python script stderr warning: ${stderrData}`);
+				console.warn(
+					`[aiService] Python script stderr warning: ${stderrData}`
+				);
 			}
-            // parse
+			// parse
 			try {
 				const result = JSON.parse(stdoutData);
 				if (result.error) {
-					return reject(new Error(`Prediction script returned an error: ${result.error}`));
+					return reject(
+						new Error(
+							`Prediction script returned an error: ${result.error}`
+						)
+					);
 				}
 				resolve(result);
 			} catch (e) {

@@ -67,7 +67,23 @@ export const getRoutes = () => {
 		try {
 			const token = localStorage.getItem("token");
 			const res = await axios.get(
-				"http://localhost:5000/api/cars/active",
+				`${process.env.REACT_APP_API_URL}/cars/active`,
+				{
+					headers: { Authorization: `Bearer ${token}` },
+				}
+			);
+
+			return res;
+		} catch (error) {
+			return false;
+		}
+	}
+
+	async function fetchActiveAlerts() {
+		try {
+			const token = localStorage.getItem("token");
+			const res = await axios.get(
+				`${process.env.REACT_APP_API_URL}/alerts?status=Active`,
 				{
 					headers: { Authorization: `Bearer ${token}` },
 				}
@@ -99,7 +115,7 @@ export const getRoutes = () => {
 		try {
 			const token = localStorage.getItem("token");
 			const res = await axios.get(
-				"http://localhost:5000/api/devices/active",
+				`${process.env.REACT_APP_API_URL}/devices/active`,
 				{
 					headers: { Authorization: `Bearer ${token}` },
 				}
@@ -116,7 +132,7 @@ export const getRoutes = () => {
 		try {
 			const token = localStorage.getItem("token");
 			const res = await axios.get(
-				"http://localhost:5000/api/serviceRequests?status=In Progress",
+				`${process.env.REACT_APP_API_URL}/serviceRequests?status=In Progress`,
 				{
 					headers: { Authorization: `Bearer ${token}` },
 				}
@@ -189,7 +205,9 @@ export const getRoutes = () => {
 		{
 			key: "telemetry-dashboard",
 			route: "/iot-devices/:deviceId/telemetry",
-			component: <ProtectedComponent component={<TelemetryDashboard />} />,
+			component: (
+				<ProtectedComponent component={<TelemetryDashboard />} />
+			),
 			protected: true,
 		},
 		{
@@ -207,7 +225,9 @@ export const getRoutes = () => {
 		{
 			key: "firmware-management",
 			route: "/iot-devices/firmware/management",
-			component: <ProtectedComponent component={<FirmwareManagement />} />,
+			component: (
+				<ProtectedComponent component={<FirmwareManagement />} />
+			),
 			protected: true,
 		},
 

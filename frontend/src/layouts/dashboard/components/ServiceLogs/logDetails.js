@@ -22,7 +22,7 @@ export default function LogDetails() {
 			const updatedStatus =
 				log.status === "In Progress" ? "Resolved" : "In Progress";
 			const updatedLog = await axios.patch(
-				`http://localhost:5000/api/serviceRequests/${log.request_id}`,
+				`${process.env.REACT_APP_API_URL}/serviceRequests/${log.request_id}`,
 				{ carId: log.car_id, status: updatedStatus },
 				{
 					headers: {

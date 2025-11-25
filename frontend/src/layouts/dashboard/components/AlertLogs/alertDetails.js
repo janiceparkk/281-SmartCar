@@ -27,7 +27,7 @@ export default function AlertDetails() {
 			const reqParam = updatedStatus === "Resolved" ? "close" : "ack";
 
 			const updatedAlert = await axios.post(
-				`http://localhost:5000/api/alerts/${alertItem.alert_id}/${reqParam}`,
+				`${process.env.REACT_APP_API_URL}/alerts/${alertItem.alert_id}/${reqParam}`,
 				null,
 				{
 					headers: {
