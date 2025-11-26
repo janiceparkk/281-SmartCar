@@ -1,181 +1,214 @@
-## This only works on ubuntu
+# CARLA Bridge API Documentation
 
-## Run installCarla.sh first.
+Based on the new `carla_bridge.py` implementation, here's the revised documentation:
 
-which contains:
+## 🚗 CARLA Bridge System
+
+The CARLA Bridge provides a real-time simulation environment with audio processing capabilities for vehicle monitoring and analysis.
+
+## 📋 Prerequisites
+
+### System Requirements
+
+- **Ubuntu** (recommended 20.04+)
+
+- **Python 3.7+**
+
+- **CARLA 0.9.15**
+
+- **Minimum 8GB RAM**, 16GB recommended
+
+- **NVIDIA GPU** with 4GB+ VRAM for optimal performance
+
+### Required Environment Variables
 
 ```bash
+
+# Create .env file in project root
+
+SERVICE_TOKEN=your-secure-service-token-here
+
+```
+
+## 🔧 Installation Guide
+
+### Step 1: Install CARLA Simulator
+
+```bash
+
+# Run from your home directory (recommended)
+
+cd ~
+
+# Download and install CARLA 0.9.15
+
 curl -L -o CARLA_0.9.15.tar.gz https://tiny.carla.org/carla-0-9-15-linux
+
 tar -xvzf CARLA_0.9.15.tar.gz
+
+cd CARLA_0.9.15
+
+# Install Python API dependencies
+
+./ImportAssets.sh
+
 ```
 
-## Might be a good idea to run them on ur home dir instead of here inside the project
-
-## After it is installed, you can run
+### Step 2: Set up Python Environment
 
 ```bash
 
-#  note that should run the installCarla.sh b4 running this.
+# Navigate to your project directory
+
+cd /path/to/your/project
+
+# Create and activate virtual environment
+
+python3 -m venv carla_env
+
+source carla_env/bin/activate
+
+# Install Python requirements
+
+pip install -r requirements.txt
+
+```
+
+**Required Python packages:**
+
+- `carla` (comes with CARLA installation)
+
+- `flask`, `flask-cors`
+
+- `opencv-python`
+
+- `numpy`
+
+- `requests`
+
+- `python-dotenv`
+
+### Step 3: Audio Dataset Setup
+
+The system requires an audio dataset for realistic sound simulation. Create the following directory structure:
+
+```
+
+backend/audio_dataset/
+
+├── road_traffic_dataset/
+
+├── car_crash_dataset/
+
+├── glass_breaking_dataset/
+
+├── Alert_sounds/
+
+├── Emergency_sirens/
+
+├── Human_Scream/
+
+└── Environmental_Sounds/
+
+```
+
+**Supported audio formats:** `.wav`, `.mp3`, `.m4a`, `.flac`, `.ogg`
+
+## 🚀 Running the System
+
+### Step 1: Start CARLA Simulator
+
+```bash
+
+# From CARLA installation directory
+
+cd ~/CARLA_0.9.15
+
+# High performance mode (recommended)
+
+./CarlaUE4.sh -quality-level=Low -windowed -ResX=800 -ResY=600
+
+# Or for better graphics (if system supports it)
+
 ./CarlaUE4.sh -windowed -ResX=1280 -ResY=720
-#  lower resolution for not laggy
-# ./CarlaUE4.sh -quality-level=Low -windowed -ResX=800 -ResY=600
+
 ```
 
-## inside the folder where you installed the carla. CarlaUE4.sh is from Carla official within their zipped file.
-
-## Then you can run the
-
-```bash
-./installPyReqnRunController.sh
-```
-
-## which will do all needed step like install py 3.7, create venv, install requirement.txt inside venv.
-
-## Then u can just run
-
-```bash
-./runControlelr.sh
-```
-
-## to see the car and controll the car. Note that
+### Step 2: Start the CARLA Bridge
 
 ```bash
 
-#  note that should run the installCarla.sh b4 running this.
-./CarlaUE4.sh -windowed -ResX=1280 -ResY=720
-#  lower resolution for not laggy
-# ./CarlaUE4.sh -quality-level=Low -windowed -ResX=800 -ResY=600
+# From your project directory
+
+cd /path/to/your/project
+
+source carla_env/bin/activate
+
+# Standard mode (with cleanup)
+
+python carla_bridge.py
+
+# Debug mode (no cleanup)
+
+python carla_bridge.py --no-cleanup
+
 ```
 
-## must be running b4 you run the controller.
+## 📡 API Documentation
 
-## This is just how to configure carla, still need to find out how to import audio files and things.
+The CARLA Bridge API runs on `http://localhost:5001`
 
-## Adjust the directory based on where u install carla accordingly.
+### Health & Status
 
-## 📡 CARLA Bridge API Documentation
+#### `GET /health`
 
-The `carla_bridge.py` script serves a Flask API for managing simulated CARLA vehicles. It runs on the base URL: `http://localhost:5001`.
+Check system health and active vehicles.
 
-### Configuration Details
+**Response:**
 
-| Parameter         | Value              | Description                                                              |
-| ----------------- | ------------------ | ------------------------------------------------------------------------ |
-| Bridge Port       | `5001`             | The port the Flask API is served on.                                     |
-| CARLA Server Port | `2000`             | The port for the CARLA simulator connection (standard).                  |
-| TM Port Range     | `8000+`            | Traffic Manager RPC ports are dynamically assigned starting from `8000`. |
-| Number of Cars    | `3` (Configurable) | Default number of vehicle actors spawned.                                |
-| CORS Enabled      | `Yes`              | Cross-Origin Resource Sharing enabled for all routes                     |
+```json
+{
+	"status": "healthy",
 
----
+	"cars_connected": 3,
 
-### GET /car-list 🚗
+	"active_cars": ["CAR1000", "CAR1001", "CAR1002"]
+}
+```
 
-Retrieves a list of the unique IDs for all cars currently spawned and managed by the Python bridge server.
+### Vehicle Management
 
-bash
+#### `GET /car-list`
 
-CopyDownload
+Get list of all active vehicle IDs.
 
-curl http://localhost:5001/car-list
+**Response:**
 
-Response:
-
-json
-
-CopyDownload
-
+```json
 ["CAR1000", "CAR1001", "CAR1002"]
+```
 
----
+#### `POST /add-car`
 
-### GET /telemetry/<car_id> 🛰️
+Add a new vehicle to the simulation.
 
-Retrieves the latest real-time telemetry data (location and speed) for a specific car ID.
+**Request:**
 
-bash
-
-CopyDownload
-
-curl http://localhost:5001/telemetry/CAR1001
-
-Response:
-
-json
-
-CopyDownload
-
+```json
 {
-"car_id": "CAR1001",
-"telemetry": {
-"lat": 150.25,
-"lon": 5.89,
-"speed": 65.4,
-"timestamp": 1732066423.123
+	"car_id": "TESLA_001",
+
+	"model": "vehicle.tesla.model3",
+
+	"location": {
+		"lat": 205.0,
+
+		"lon": 15.0
+	}
 }
-}
+```
 
----
-
-### GET /video-stream/<car_id> 🎥
-
-Provides a continuous, live Motion JPEG (MJPEG) video stream from the RGB camera attached to the specified car.
-
-bash
-
-CopyDownload
-
-# Use in HTML: <img src="http://localhost:5001/video-stream/CAR1002" />
-
-Format: Motion JPEG (MJPEG)\
-Resolution: 640x480
-
----
-
-### GET /health 🩺
-
-Provides health status and basic information about the CARLA bridge server.
-
-bash
-
-CopyDownload
-
-curl http://localhost:5001/health
-
-Response:
-
-json
-
-CopyDownload
-
-{
-"status": "healthy",
-"cars_connected": 3,
-"active_cars": ["CAR1000", "CAR1001", "CAR1002"]
-}
-
----
-
-### POST /add-car ➕
-
-Manually adds a new car to the simulation with custom parameters including model selection and spawn location.
-
-bash
-
-CopyDownload
-
-curl -X POST http://localhost:5001/add-car\
- -H "Content-Type: application/json"\
- -d '{
-"car_id": "TESLA_001",
-"model": "vehicle.tesla.model3",
-"location": {
-"lat": 205.0,
-"lon": 15.0
-}
-}'
-
-Available Vehicle Models:
+**Available Vehicle Models:**
 
 - `vehicle.tesla.model3`
 
@@ -185,13 +218,13 @@ Available Vehicle Models:
 
 - `vehicle.chevrolet.impala`
 
-- `vehicle.dodge.charger`
+- `vehicle.dodge.charger.police`
 
 - `vehicle.ford.mustang`
 
-- `vehicle.jeep.wrangler`
+- `vehicle.jeep.wrangler_rubber`
 
-- `vehicle.lincoln.mkz`
+- `vehicle.lincoln.mkz2017`
 
 - `vehicle.mercedes.coupe`
 
@@ -205,140 +238,192 @@ Available Vehicle Models:
 
 - `vehicle.volkswagen.t2`
 
-Response:
+#### `POST /remove-car/<car_id>`
 
-json
+Remove a vehicle from simulation.
 
-CopyDownload
+### Real-time Data Streams
 
+#### `GET /telemetry/<car_id>`
+
+Get real-time vehicle telemetry data.
+
+**Response:**
+
+```json
 {
-"message": "Car TESLA_001 added successfully",
-"car_id": "TESLA_001",
-"model": "vehicle.tesla.model3",
-"tm_port": 8003
+	"car_id": "CAR1000",
+
+	"telemetry": {
+		"lat": 150.25,
+
+		"lon": 5.89,
+
+		"speed": 65.4,
+
+		"timestamp": 1732066423.123
+	}
 }
+```
 
----
+#### `GET /video-stream/<car_id>`
 
-### POST /remove-car/<car_id> 🗑️
+First-person view video stream (MJPEG format).
 
-Removes a specific car from the simulation and cleans up its resources.
+**Usage:**
 
-bash
+```html
+<img src="http://localhost:5001/video-stream/CAR1000" />
+```
 
-CopyDownload
+#### `GET /video-stream-third-person/<car_id>`
 
-curl -X POST http://localhost:5001/remove-car/CAR1001
+Third-person view video stream (MJPEG format).
 
-Response:
+#### `GET /camera-positions`
 
-json
+Get all available camera streams.
 
-CopyDownload
+**Response:**
 
+```json
 {
-"message": "Car CAR1001 removed successfully"
+	"CAR1000": {
+		"first_person": "/video-stream/CAR1000",
+
+		"third_person": "/video-stream-third-person/CAR1000"
+	}
 }
+```
 
----
+## 🔊 Audio Processing System
 
-## 🖥️ Command Line Usage
+### Audio Categories & Triggers
 
-### Standard Mode (Default)
+| Category      | Trigger Condition  | Sample Sources                            |
+| ------------- | ------------------ | ----------------------------------------- |
+| Idle          | Speed < 5 km/h     | road_traffic_dataset                      |
+| Low Speed     | 5–30 km/h          | road_traffic_dataset                      |
+| Medium Speed  | 30–70 km/h         | road_traffic_dataset                      |
+| High Speed    | >70 km/h           | road_traffic_dataset                      |
+| Braking       | Rapid deceleration | road_traffic_dataset                      |
+| Collision     | Stuck >30 seconds  | car_crash_dataset, glass_breaking_dataset |
+| Horn          | Manual trigger     | Alert_sounds                              |
+| Siren         | Emergency vehicles | Emergency_sirens                          |
+| Scream        | Pedestrian events  | Human_Scream                              |
+| Environmental | Ambient sounds     | Environmental_Sounds                      |
 
-Cleans up CARLA actors on crash or script exit.
+### Audio Processing Flow
 
-bash
+1\. **Speed-based categorization** every 10 seconds
 
-CopyDownload
+2\. **Dataset lookup** with keyword matching
 
-python3 carla_bridge.py
+3\. **Fallback generation** if no audio files found
+
+4\. **Upload to Express backend** for AI analysis
+
+5\. **Automatic cleanup** of temporary files
+
+## 🔧 Configuration
+
+### Environment Variables
+
+```python
+
+EXPRESS_HTTP_URL = "http://localhost:5000"  # Backend API
+
+CARLA_BRIDGE_PORT = 5001                    # Bridge server port
+
+NUMBER_OF_CARS = 3                          # Default vehicle count
+
+MIN_SPEED_FOR_AUDIO = 5.0                   # Minimum speed for audio processing
+
+AUDIO_INTERVAL = 10.0                       # Audio processing interval (seconds)
+
+```
+
+### Audio Dataset Structure
+
+The system searches for audio files in this priority:
+
+1\. Category-specific folders (e.g., `road_traffic_dataset/`)
+
+2\. Keyword matching in filenames
+
+3\. Fallback synthetic audio generation
+
+## 🛠️ Troubleshooting
+
+### Common Issues
+
+1\. **CARLA Connection Failed**
+
+   ```bash
+
+   # Check CARLA server is running
+
+   netstat -tulpn | grep 2000
+
+   ```
+
+2\. **Audio Files Not Found**
+
+   ```bash
+
+   # Verify dataset structure
+
+   find backend/audio_dataset -name "\*.wav" | head -10
+
+   ```
+
+3\. **Service Token Error**
+
+   ```bash
+
+   # Check environment variable
+
+   echo $SERVICE_TOKEN
+
+   ```
+
+4\. **Performance Issues**
+
+   ```bash
+
+   # Use lower quality settings
+
+   ./CarlaUE4.sh -quality-level=Low -windowed -ResX=640 -ResY=480
+
+   ```
 
 ### Debug Mode
 
-Skips cleanup for manual inspection of vehicles.
+Run with `--no-cleanup` flag to preserve actors for inspection:
 
-bash
+```bash
 
-CopyDownload
+python carla_bridge.py --no-cleanup
 
-python3 carla_bridge.py --no-cleanup
+```
 
-> ⚠️ Warning: If you use `--no-cleanup` and restart the script, the new cars may conflict with the old, remaining actors. You must manually destroy the old actors or restart the CARLA server application between runs.
+```
 
----
+## 🎯 Key Features
 
-## 🔧 Integration Example
+- **Real-time vehicle simulation** with autopilot
 
-### React Frontend Integration
+- **Dual camera streams** (first-person & third-person)
 
-javascript
+- **Intelligent audio processing** based on vehicle behavior
 
-CopyDownload
+- **RESTful API** for external integration
 
-// Adding a new car
-const addCar = async () => {
-const response = await fetch('http://localhost:5001/add-car', {
-method: 'POST',
-headers: {
-'Content-Type': 'application/json',
-},
-body: JSON.stringify({
-car_id: 'MY_CAR_001',
-model: 'vehicle.audi.tt',
-location: {
-lat: 210.5,
-lon: 18.2
-}
-}),
-});
-const result = await response.json();
-console.log(result.message);
-};
+- **Thread-safe operations** with proper cleanup
 
-// Removing a car
-const removeCar = async (carId) => {
-const response = await fetch(`http://localhost:5001/remove-car/${carId}`, {
-method: 'POST',
-});
-const result = await response.json();
-console.log(result.message);
-};
+- **Extensible vehicle models** and spawn locations
 
-### Error Handling
+- **Comprehensive telemetry** monitoring
 
-All endpoints return appropriate HTTP status codes:
-
-- `200` - Success
-
-- `400` - Bad Request (missing/invalid parameters)
-
-- `404` - Car not found
-
-- `500` - Internal server error
-
-Error responses include an `error` field with descriptive messages:
-
-json
-
-CopyDownload
-
-{
-"error": "Car ID is required"
-}
-
----
-
-## 📋 Notes
-
-- CORS Support: All endpoints support Cross-Origin requests for web frontend integration
-
-- Real-time Updates: Telemetry and video streams update in real-time (telemetry every second, video at ~20fps)
-
-- Thread Safety: All car data access is protected by threading locks
-
-- Automatic Cleanup: Vehicles automatically clean up on exit unless `--no-cleanup` flag is used
-
-- Unique IDs: Car IDs must be unique across the simulation
-
-- Coordinate System: Uses CARLA's coordinate system where X=longitude, Y=latitude
+This revised documentation reflects the current implementation with enhanced audio processing, better error handling, and more detailed configuration options.
+```

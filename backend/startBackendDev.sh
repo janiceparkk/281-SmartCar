@@ -4,6 +4,7 @@ pip install --upgrade pip
 pip install numpy torch librosa soundfile scipy numba
 
 npm install 
+#  increae inotify watch limit for nodemon to work properly
 echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf
 echo fs.inotify.max_user_instances=1024 | sudo tee -a /etc/sysctl.conf
 sudo sysctl -p
