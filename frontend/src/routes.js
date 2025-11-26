@@ -80,19 +80,7 @@ export const getRoutes = () => {
 			return false;
 		}
 	}
-
-	async function fetchAlerts() {
-		try {
-			const token = localStorage.getItem("token");
-			const res = await axios.get("http://localhost:5000/api/alerts", {
-				headers: { Authorization: `Bearer ${token}` },
-			});
-			return res;
-		} catch (error) {
-			return false;
-		}
-	}
-
+	
 	async function fetchActiveAlerts() {
 		try {
 			const token = localStorage.getItem("token");
@@ -118,22 +106,6 @@ export const getRoutes = () => {
 					headers: { Authorization: `Bearer ${token}` },
 				}
 			);
-			return res;
-		} catch (error) {
-			return false;
-		}
-	}
-
-	async function fetchActiveAlerts() {
-		try {
-			const token = localStorage.getItem("token");
-			const res = await axios.get(
-				`${process.env.REACT_APP_API_URL}/alerts?status=Active`,
-				{
-					headers: { Authorization: `Bearer ${token}` },
-				}
-			);
-
 			return res;
 		} catch (error) {
 			return false;
