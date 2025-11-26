@@ -227,6 +227,9 @@ DROP COLUMN IF EXISTS priority,
 DROP COLUMN IF EXISTS issue_types,
 ADD COLUMN IF NOT EXISTS issue_id INTEGER NOT NULL REFERENCES issue_types(issue_id) ON UPDATE CASCADE;
 
+ALTER TABLE users
+ADD COLUMN IF NOT EXISTS profile_data JSONB DEFAULT '{}';
+
 -- -----------------------------------------------------------
 -- Populate Issue Types Table
 -- -----------------------------------------------------------

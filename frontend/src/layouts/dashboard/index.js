@@ -32,8 +32,8 @@ import ReportsLineChart from "examples/Charts/LineCharts/ReportsLineChart";
 import ComplexStatisticsCard from "examples/Cards/StatisticsCards/ComplexStatisticsCard";
 
 // Data
-// import reportsBarChartData from "layouts/dashboard/data/reportsBarChartData";
-import reportsLineChartData from "layouts/dashboard/data/reportsLineChartData";
+import AudioBarChartData from "./data/audioBarChartData";
+import AlertsLineChartData from "./data/alertsLineChartData";
 
 // Dashboard components
 import AlertLogs from "layouts/dashboard/components/AlertLogs";
@@ -42,6 +42,7 @@ import ServiceLogs from "./components/ServiceLogs";
 function Dashboard(props) {
 	const {
 		fetchActiveCars,
+		fetchAlerts,
 		fetchActiveAlerts,
 		fetchActiveRequests,
 		fetchActiveDevices,
@@ -51,12 +52,6 @@ function Dashboard(props) {
 	const [activeAlerts, setActiveAlerts] = useState(0);
 	const [activeRequests, setActiveRequests] = useState(0);
 	const [activeDevices, setActiveDevices] = useState(0);
-
-	const { tasks } = reportsLineChartData;
-	const [audioData, setAudioData] = useState({
-		labels: ["Collision", "Horn", "Voice", "Siren", "Animal", "Tire"],
-		datasets: { label: "Counts", data: [1, 0, 0, 1, 0, 1] },
-	});
 
 	useEffect(() => {
 		fetchActiveCars().then((result) => {
@@ -141,9 +136,9 @@ function Dashboard(props) {
 								<ReportsBarChart
 									color="info"
 									title="Audio Event Counts"
-									description="For the Month"
+									description="This Year"
 									date="Just updated"
-									chart={audioData}
+									chart={AudioBarChartData(fetchAlerts)}
 								/>
 							</MDBox>
 						</Grid>
@@ -154,7 +149,7 @@ function Dashboard(props) {
 									title="Alert Detection"
 									description="Per Month"
 									date="Just updated"
-									chart={tasks}
+									chart={AlertsLineChartData(fetchAlerts)}
 								/>
 							</MDBox>
 						</Grid>

@@ -96,11 +96,26 @@ export const getRoutes = () => {
 		}
 	}
 
+	async function fetchAlerts() {
+		try {
+			const token = localStorage.getItem("token");
+			const res = await axios.get(
+				`${process.env.REACT_APP_API_URL}/alerts`,
+				{
+					headers: { Authorization: `Bearer ${token}` },
+				}
+			);
+			return res;
+		} catch (error) {
+			return false;
+		}
+	}
+
 	async function fetchActiveAlerts() {
 		try {
 			const token = localStorage.getItem("token");
 			const res = await axios.get(
-				"http://localhost:5000/api/alerts?status=Active",
+				`${process.env.REACT_APP_API_URL}/alerts?status=Active`,
 				{
 					headers: { Authorization: `Bearer ${token}` },
 				}
@@ -159,6 +174,7 @@ export const getRoutes = () => {
 					component={
 						<Dashboard
 							fetchActiveCars={fetchActiveCars}
+							fetchAlerts={fetchAlerts}
 							fetchActiveAlerts={fetchActiveAlerts}
 							fetchActiveRequests={fetchActiveRequests}
 							fetchActiveDevices={fetchActiveDevices}
