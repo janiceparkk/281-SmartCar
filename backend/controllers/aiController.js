@@ -50,11 +50,9 @@ async function processAudio(req, res) {
 		});
 	} catch (error) {
 		console.error("[aiController] Error processing audio:", error.message);
-		return res
-			.status(500)
-			.json({
-				message: "An internal error occurred during audio analysis.",
-			});
+		return res.status(500).json({
+			message: "An internal error occurred during audio analysis.",
+		});
 	} finally {
 		// Clean up the temporary file
 		fs.unlink(tempFilePath, (err) => {

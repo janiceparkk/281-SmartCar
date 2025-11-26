@@ -3,6 +3,7 @@ const router = express.Router();
 const { pgPool } = require("../config/database");
 const { authMiddleware } = require("./helper");
 const {
+	getIssueTypes,
 	getServiceRequests,
 	postServiceRequest,
 	patchServiceRequest,
@@ -66,6 +67,20 @@ router.get("/", async (req, res) => {
 		res.status(500).json({
 			message:
 				"Failed to retrieve service requests and logs due to server error.",
+		});
+	}
+});
+
+// GET /api/serviceRequests/issueTypes
+// Get Issue Types for Service Requests
+router.get("/issueTypes", async (req, res) => {
+	try {
+		const issueTypes = await getIssueTypes();
+		res.status(200).json(issueTypes);
+	} catch (error) {
+		console.error("Get Issue Types Error:", error.message);
+		res.status(500).json({
+			message: "Failed to retrieve issue types due to server error.",
 		});
 	}
 });

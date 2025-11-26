@@ -40,8 +40,6 @@ function SignUp() {
 
 		try {
 			const result = await registerUser(formData);
-			console.log("Registration successful:", result);
-			// Redirect to login page after successful signup
 			window.location.href = "/login";
 		} catch (err) {
 			setError(err.message);
