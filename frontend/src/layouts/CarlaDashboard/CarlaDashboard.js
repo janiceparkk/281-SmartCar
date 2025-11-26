@@ -218,6 +218,21 @@ const CarlaDashboard = () => {
 		[]
 	);
 	const isFetching = useRef(false);
+	const [isAdmin, setIsAdmin] = useState(false);
+
+	// Get user role on component mount
+	useEffect(() => {
+		const getUserRole = () => {
+			// Option 1: From token/localStorage
+			const userData = localStorage.getItem("userData");
+			if (userData) {
+				const user = JSON.parse(userData);
+				setIsAdmin(user.role === "Admin" || user.role_id === 1);
+			}
+		};
+
+		getUserRole();
+	}, []);
 
 	// Reset videoReady when selectedCar changes
 	useEffect(() => {
@@ -271,18 +286,12 @@ const CarlaDashboard = () => {
 	// 1. Update the fetchCarList function
 	const fetchCarList = useCallback(
 		async (manualRefresh = false) => {
-			// Prevent overlapping fetches
 			if (isFetching.current) return;
 			isFetching.current = true;
 
 			try {
 				setError(null);
-
-				// FIX: Only set loading if explicitly requested (e.g. manual button click)
-				// We removed the logic that auto-triggers loading on empty lists to prevent loops
-				if (manualRefresh) {
-					setLoading(true);
-				}
+				if (manualRefresh) setLoading(true);
 
 				const token = getAuthToken();
 				if (!token) {
@@ -292,99 +301,60 @@ const CarlaDashboard = () => {
 					return;
 				}
 
-				let carList = [];
-				let newCarlaAvailable = false; // Renamed to avoid confusion with state var
+				// SIMPLE: Choose endpoint based on admin status
+				const endpoint = isAdmin
+					? `${API_URL}/cars` // Admin gets ALL cars
+					: `${API_URL}/cars/user`; // Regular user gets only their cars
 
-				// ... (Keep your existing fetch logic for CARLA/DB here) ...
-				try {
-					const controller = new AbortController();
-					const timeoutId = setTimeout(
-						() => controller.abort(),
-						3000
-					);
-					const response = await fetch(`${API_URL}/cars/carla`, {
-						signal: controller.signal,
-						headers: {
-							"Content-Type": "application/json",
-							Authorization: `Bearer ${token}`,
-						},
-					});
-					clearTimeout(timeoutId);
+				const response = await fetch(endpoint, {
+					headers: {
+						"Content-Type": "application/json",
+						Authorization: `Bearer ${token}`,
+					},
+				});
 
-					if (response.ok) {
-						carList = await response.json();
-						if (Array.isArray(carList)) {
-							newCarlaAvailable = carList.some(
-								(car) =>
-									car.carla_available &&
-									car.is_active_in_carla
-							);
-						} else carList = [];
-					} else throw new Error(`HTTP ${response.status}`);
-				} catch (carlaError) {
-					// ... (Keep existing fallback logic) ...
-					try {
-						const fallbackResponse = await fetch(
-							`${API_URL}/cars/user`,
-							{
-								headers: {
-									"Content-Type": "application/json",
-									Authorization: `Bearer ${token}`,
-								},
-							}
-						);
-						if (fallbackResponse.ok) {
-							const userCars = await fallbackResponse.json();
-							carList = Array.isArray(userCars)
-								? userCars.map((car) => ({
-										...car,
-										carla_car_id: car.license_plate || null,
-										is_active_in_carla: false,
-										carla_available: false,
-								  }))
-								: [];
-						}
-					} catch (fallbackError) {
-						// handle error
+				if (response.ok) {
+					let carList = await response.json();
+
+					// Optional: Add CARLA status for admin if needed
+					if (isAdmin && carlaAvailable) {
+						// You could enhance this to show which cars are active in CARLA
+						carList = carList.map((car) => ({
+							...car,
+							carla_car_id: car.license_plate || null,
+							is_active_in_carla: false, // You'd need to check CARLA separately
+							carla_available: carlaAvailable,
+						}));
 					}
-				}
 
-				// FIX: Functional state updates allow us to remove 'cars' from dependencies
-				setCars((prevCars) =>
-					JSON.stringify(prevCars) === JSON.stringify(carList)
-						? prevCars
-						: carList
-				);
+					setCars(carList);
 
-				setCarlaAvailable(newCarlaAvailable);
-
-				if (carList.length > 0) {
-					// Logic using carId (which IS a valid dependency)
-					const newSelectedCar = carId
-						? carList.find((car) => car.car_id === carId)
-						: carList[0];
-
-					// Functional update for selectedCar
-					setSelectedCar((prev) =>
-						prev?.car_id === newSelectedCar?.car_id
-							? prev
-							: newSelectedCar
-					);
+					// Rest of your selection logic...
+					if (carList.length > 0) {
+						const newSelectedCar = carId
+							? carList.find((car) => car.car_id === carId)
+							: carList[0];
+						setSelectedCar((prev) =>
+							prev?.car_id === newSelectedCar?.car_id
+								? prev
+								: newSelectedCar
+						);
+					} else {
+						setSelectedCar(null);
+					}
 				} else {
-					setSelectedCar(null);
+					throw new Error(`HTTP ${response.status}`);
 				}
 			} catch (error) {
 				console.error("Error fetching car list:", error);
 				setError(`Failed to fetch vehicles: ${error.message}`);
 			} finally {
-				// Always ensure these are reset
 				setLoading(false);
 				isFetching.current = false;
 			}
-			// FIX: Only depend on carId. 'loading' and 'cars.length' are removed.
 		},
-		[carId]
-	);
+		[carId, isAdmin]
+	); // Add isAdmin as dependency
 
 	// 2. Update the useEffect
 	useEffect(() => {

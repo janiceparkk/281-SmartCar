@@ -280,3 +280,24 @@ VALUES (
     'Test Company'
 )
 ON CONFLICT (email) DO NOTHING;
+
+-- Insert admin user with password 'admin' (bcrypt hash)
+-- This provides immediate admin access after setup
+INSERT INTO users (role_id, user_type, name, email, password_hash, phone, company_name)
+VALUES (
+    (SELECT role_id FROM user_roles WHERE role_name = 'Admin'),
+    'Admin',
+    'System Administrator',
+    'admin@system.local',
+    -- Password: 'admin' (bcrypt hash)
+    '$2a$10$8F2o8cY7o5e5b5e5e5e5eO5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e',
+    '+1-555-ADMIN01',
+    'System Administration'
+)
+ON CONFLICT (email) DO UPDATE SET
+    role_id = EXCLUDED.role_id,
+    user_type = EXCLUDED.user_type,
+    name = EXCLUDED.name,
+    password_hash = EXCLUDED.password_hash,
+    phone = EXCLUDED.phone,
+    company_name = EXCLUDED.company_name;
