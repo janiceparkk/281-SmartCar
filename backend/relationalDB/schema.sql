@@ -289,8 +289,7 @@ VALUES (
     'Admin',
     'System Administrator',
     'admin@system.local',
-    -- Password: 'admin' (bcrypt hash)
-    '$2a$10$8F2o8cY7o5e5b5e5e5e5eO5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e',
+    '$2a$12$Wi.QE4KtfFhI.lnqKJ6M0uAJ2FB0AvyEk8yfEMs5axXUg35TZXmku',
     '+1-555-ADMIN01',
     'System Administration'
 )

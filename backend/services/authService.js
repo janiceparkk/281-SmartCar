@@ -21,13 +21,23 @@ const googleAuthCallback = (req, res, next) => {
 		if (err || !user) {
 			return res.redirect("/login?error=auth_failed");
 		}
+
 		req.login(user, (loginErr) => {
 			if (loginErr) {
 				return next(loginErr);
 			}
-			const token = jwt.sign({ id: user.id }, JWT_SECRET, {
-				expiresIn: "1h",
-			});
+
+			const token = jwt.sign(
+				{
+					id: user.id,
+					email: user.email,
+					pgId: user.pg_user_id,
+				},
+				JWT_SECRET,
+				{
+					expiresIn: "1h",
+				}
+			);
 
 			const frontendUrl =
 				process.env.FRONTEND_URL?.split(",")[0]?.trim() ||

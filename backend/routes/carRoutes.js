@@ -111,27 +111,44 @@ router.get("/carla", async (req, res) => {
 		const CARLA_BRIDGE_URL =
 			process.env.CARLA_BRIDGE_URL || "http://localhost:5001";
 
-		// Get user's cars from PostgreSQL FIRST (this should always work)
 		let userCars = [];
 		try {
-			const userCarsResult = await pgPool.query(
-				'SELECT * FROM "smart_cars" WHERE user_id = $1 ORDER BY car_id',
+			const roleResult = await pgPool.query(
+				`SELECT ur.role_name 
+                 FROM users u 
+                 JOIN user_roles ur ON u.role_id = ur.role_id 
+                 WHERE u.user_id = $1`,
 				[userId]
 			);
-			userCars = userCarsResult.rows;
+
+			const userRole = roleResult.rows[0]?.role_name;
+
+			if (userRole === "Admin") {
+				const allCarsResult = await pgPool.query(
+					`SELECT sc.*, u.name as owner_name, u.email as owner_email 
+                     FROM "smart_cars" sc
+                     LEFT JOIN users u ON sc.user_id = u.user_id 
+                     ORDER BY sc.car_id`
+				);
+				userCars = allCarsResult.rows;
+			} else {
+				const userCarsResult = await pgPool.query(
+					'SELECT * FROM "smart_cars" WHERE user_id = $1 ORDER BY car_id',
+					[userId]
+				);
+				userCars = userCarsResult.rows;
+			}
 		} catch (dbError) {
-			console.error("Database error fetching user cars:", dbError);
+			console.error("Database error fetching cars:", dbError);
 			return res.status(500).json({
 				message: "Failed to retrieve cars from database.",
 				error: dbError.message,
 			});
 		}
 
-		// Try to get active cars from CARLA bridge (optional - don't fail if unavailable)
 		let carlaActiveCars = [];
 		let carlaAvailable = false;
 
-		// Use a timeout wrapper for better compatibility
 		const fetchWithTimeout = (url, timeout = 2000) => {
 			return Promise.race([
 				fetch(url),
@@ -151,14 +168,11 @@ router.get("/carla", async (req, res) => {
 				carlaAvailable = true;
 			}
 		} catch (error) {
-			// CARLA bridge is unavailable - continue without it
 			console.log(
 				`CARLA bridge unavailable (${error.message}), showing cars from database only`
 			);
 		}
 
-		// Map all user cars with CARLA status
-		// Use license_plate as the CARLA car_id mapping
 		const mappedCars = userCars.map((car) => {
 			const carlaCarId = car.license_plate;
 			const isActiveInCarla =
@@ -169,36 +183,15 @@ router.get("/carla", async (req, res) => {
 
 			return {
 				...car,
-				carla_car_id: carlaCarId || null, // The CARLA car_id (if available)
+				carla_car_id: carlaCarId || null,
 				is_active_in_carla: isActiveInCarla,
-				carla_available: carlaAvailable, // Indicates if CARLA bridge is reachable
+				carla_available: carlaAvailable,
 			};
 		});
 
-		// Always return cars from database, even if CARLA is down
 		return res.json(mappedCars);
 	} catch (error) {
 		console.error("Error in /api/cars/carla endpoint:", error);
-		// Even on error, try to return cars from database if possible
-		try {
-			const userId = req.user?.id;
-			if (userId) {
-				const userCarsResult = await pgPool.query(
-					'SELECT * FROM "smart_cars" WHERE user_id = $1 ORDER BY car_id',
-					[userId]
-				);
-				const fallbackCars = userCarsResult.rows.map((car) => ({
-					...car,
-					carla_car_id: car.license_plate || null,
-					is_active_in_carla: false,
-					carla_available: false,
-				}));
-				return res.json(fallbackCars);
-			}
-		} catch (fallbackError) {
-			console.error("Fallback also failed:", fallbackError);
-		}
-
 		return res.status(500).json({
 			message: "Failed to retrieve user cars.",
 			error: error.message,

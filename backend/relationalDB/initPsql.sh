@@ -103,47 +103,7 @@ else
     exit 1
 fi
 
-# --- 4. Create Admin User ---
-
-echo "--- 4. Creating Admin User ---"
-
-echo "Creating admin user with credentials: admin/admin"
-
-sudo -u postgres psql -d "$PG_DATABASE" << EOF
--- Insert admin user with password 'admin' (bcrypt hash)
-INSERT INTO users (role_id, user_type, name, email, password_hash, phone, company_name)
-VALUES (
-    (SELECT role_id FROM user_roles WHERE role_name = 'Admin'),
-    'Admin',
-    'System Administrator',
-    'admin@system.local',
-    -- Password: 'admin' (bcrypt hash)
-    '\$2a\$10\$8F2o8cY7o5e5b5e5e5e5eO5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e',
-    '+1-555-ADMIN01',
-    'System Administration'
-) ON CONFLICT (email) DO UPDATE SET
-    role_id = EXCLUDED.role_id,
-    user_type = EXCLUDED.user_type,
-    name = EXCLUDED.name,
-    password_hash = EXCLUDED.password_hash,
-    phone = EXCLUDED.phone,
-    company_name = EXCLUDED.company_name;
-
--- Verify admin user creation
-SELECT 'Admin user created successfully:' as message, user_id, name, email, role_name 
-FROM users 
-JOIN user_roles USING (role_id) 
-WHERE email = 'admin@system.local';
-EOF
-
-echo "Admin user created/updated with credentials:"
-echo "  Username: admin"
-echo "  Password: admin"
-echo "  Email: admin@system.local"
-
-# --- 5. Verifying Data Insertion ---
-
-echo "--- 5. Verifying Data Insertion ---"
+echo "--- 4. Verifying Data Insertion ---"
 
 # Check user roles
 echo "user_roles table:"

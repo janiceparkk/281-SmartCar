@@ -27,11 +27,8 @@ import {
 	DialogContent,
 	DialogActions,
 	Snackbar,
-	FormControl,
-	InputLabel,
-	Select,
-	MenuItem,
 	CircularProgress,
+	Autocomplete,
 } from "@mui/material";
 import {
 	DirectionsCar as CarIcon,
@@ -49,11 +46,15 @@ import { Skeleton } from "@mui/material";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
 
-const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000";
+const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
 const CARLA_BRIDGE_URL =
 	process.env.REACT_APP_CARLA_BRIDGE_URL || "http://localhost:5001";
 const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || "";
-
+const CAR_STATUSES = [
+	{ label: "Active", value: "active" },
+	{ label: "Inactive", value: "inactive" },
+	{ label: "Maintenance", value: "maintenance" },
+];
 const CARLA_MODELS = [
 	{ label: "Tesla Model 3", value: "vehicle.tesla.model3" },
 	{ label: "Audi A2", value: "vehicle.audi.a2" },
@@ -184,6 +185,11 @@ const CarlaDashboard = () => {
 	const [newCarModel, setNewCarModel] = useState("vehicle.tesla.model3");
 	const [newCarLat, setNewCarLat] = useState("");
 	const [newCarLon, setNewCarLon] = useState("");
+	const [newCarMake, setNewCarMake] = useState("");
+	const [newCarYear, setNewCarYear] = useState("");
+	const [newCarVIN, setNewCarVIN] = useState("");
+	const [newCarColor, setNewCarColor] = useState("");
+
 	const [snackbar, setSnackbar] = useState({
 		open: false,
 		message: "",
@@ -201,13 +207,36 @@ const CarlaDashboard = () => {
 		current_longitude: "",
 	});
 	const [carlaAvailable, setCarlaAvailable] = useState(false);
-	const [videoReady, setVideoReady] = useState(false);
 	const videoRefs = useRef({});
 
 	const [alerts, setAlerts] = useState([]);
 	const [alertPage, setAlertPage] = useState(1);
 	const [loadingAlerts, setLoadingAlerts] = useState(false);
 
+	const [availableUsers, setAvailableUsers] = useState([]);
+	const [selectedOwner, setSelectedOwner] = useState(null);
+	const [isAdmin, setIsAdmin] = useState(false);
+	const fetchUsers = useCallback(async () => {
+		const token = getAuthToken();
+		if (!token) return;
+
+		try {
+			const response = await fetch(`${API_URL}/user`, {
+				headers: { Authorization: `Bearer ${token}` },
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				setAvailableUsers(data);
+				setIsAdmin(true); // If we can fetch users, we are admin
+			} else {
+				// If 403, regular user, just ignore
+				setIsAdmin(false);
+			}
+		} catch (error) {
+			console.error("Failed to fetch users", error);
+		}
+	}, []);
 	const { isLoaded: isMapLoaded, loadError: mapLoadError } = useJsApiLoader({
 		id: "google-map-script",
 		googleMapsApiKey: GOOGLE_MAPS_API_KEY || "DUMMY_KEY",
@@ -218,32 +247,11 @@ const CarlaDashboard = () => {
 		[]
 	);
 	const isFetching = useRef(false);
-	const [isAdmin, setIsAdmin] = useState(false);
 
-	// Get user role on component mount
-	useEffect(() => {
-		const getUserRole = () => {
-			// Option 1: From token/localStorage
-			const userData = localStorage.getItem("userData");
-			if (userData) {
-				const user = JSON.parse(userData);
-				setIsAdmin(user.role === "Admin" || user.role_id === 1);
-			}
-		};
-
-		getUserRole();
-	}, []);
-
-	// Reset videoReady when selectedCar changes
-	useEffect(() => {
-		setVideoReady(false);
-	}, [selectedCar]);
-
-	// Utility function to convert CARLA coordinates to real-world latitude and longitude
 	const carlaToLatLng = (x, y, originLat, originLng) => {
-		const metersPerDegreeLat = 111320; // Approximate meters per degree latitude
+		const metersPerDegreeLat = 111320;
 		const metersPerDegreeLng =
-			(40075000 * Math.cos((originLat * Math.PI) / 180)) / 360; // Adjust for longitude
+			(40075000 * Math.cos((originLat * Math.PI) / 180)) / 360;
 
 		const lat = originLat + y / metersPerDegreeLat;
 		const lng = originLng + x / metersPerDegreeLng;
@@ -251,8 +259,7 @@ const CarlaDashboard = () => {
 		return { lat, lng };
 	};
 
-	// Define a reference point for CARLA's origin in real-world coordinates
-	const CARLA_ORIGIN = { lat: 37.7749, lng: -122.4194 }; // Example: San Francisco
+	const CARLA_ORIGIN = { lat: 37.7749, lng: -122.4194 }; //  San Francisco
 
 	// Update mapCoordinates to use the transformation
 	const mapCoordinates = useMemo(() => {
@@ -283,15 +290,18 @@ const CarlaDashboard = () => {
 
 	const getAuthToken = () => localStorage.getItem("token");
 
-	// 1. Update the fetchCarList function
 	const fetchCarList = useCallback(
 		async (manualRefresh = false) => {
+			// Prevent overlapping fetches
 			if (isFetching.current) return;
 			isFetching.current = true;
 
 			try {
 				setError(null);
-				if (manualRefresh) setLoading(true);
+
+				if (manualRefresh) {
+					setLoading(true);
+				}
 
 				const token = getAuthToken();
 				if (!token) {
@@ -301,49 +311,81 @@ const CarlaDashboard = () => {
 					return;
 				}
 
-				// SIMPLE: Choose endpoint based on admin status
-				const endpoint = isAdmin
-					? `${API_URL}/cars` // Admin gets ALL cars
-					: `${API_URL}/cars/user`; // Regular user gets only their cars
+				let carList = [];
+				let newCarlaAvailable = false;
 
-				const response = await fetch(endpoint, {
-					headers: {
-						"Content-Type": "application/json",
-						Authorization: `Bearer ${token}`,
-					},
-				});
+				try {
+					const controller = new AbortController();
+					const timeoutId = setTimeout(
+						() => controller.abort(),
+						3000
+					);
+					const response = await fetch(`${API_URL}/cars/carla`, {
+						signal: controller.signal,
+						headers: {
+							"Content-Type": "application/json",
+							Authorization: `Bearer ${token}`,
+						},
+					});
+					clearTimeout(timeoutId);
 
-				if (response.ok) {
-					let carList = await response.json();
-
-					// Optional: Add CARLA status for admin if needed
-					if (isAdmin && carlaAvailable) {
-						// You could enhance this to show which cars are active in CARLA
-						carList = carList.map((car) => ({
-							...car,
-							carla_car_id: car.license_plate || null,
-							is_active_in_carla: false, // You'd need to check CARLA separately
-							carla_available: carlaAvailable,
-						}));
-					}
-
-					setCars(carList);
-
-					// Rest of your selection logic...
-					if (carList.length > 0) {
-						const newSelectedCar = carId
-							? carList.find((car) => car.car_id === carId)
-							: carList[0];
-						setSelectedCar((prev) =>
-							prev?.car_id === newSelectedCar?.car_id
-								? prev
-								: newSelectedCar
+					if (response.ok) {
+						carList = await response.json();
+						if (Array.isArray(carList)) {
+							newCarlaAvailable = carList.some(
+								(car) =>
+									car.carla_available &&
+									car.is_active_in_carla
+							);
+						} else carList = [];
+					} else throw new Error(`HTTP ${response.status}`);
+				} catch (carlaError) {
+					try {
+						const fallbackResponse = await fetch(
+							`${API_URL}/cars/user`,
+							{
+								headers: {
+									"Content-Type": "application/json",
+									Authorization: `Bearer ${token}`,
+								},
+							}
 						);
-					} else {
-						setSelectedCar(null);
+						if (fallbackResponse.ok) {
+							const userCars = await fallbackResponse.json();
+							carList = Array.isArray(userCars)
+								? userCars.map((car) => ({
+										...car,
+										carla_car_id: car.license_plate || null,
+										is_active_in_carla: false,
+										carla_available: false,
+								  }))
+								: [];
+						}
+					} catch (fallbackError) {
+						console.log("fallbackError", fallbackError);
 					}
+				}
+
+				setCars((prevCars) =>
+					JSON.stringify(prevCars) === JSON.stringify(carList)
+						? prevCars
+						: carList
+				);
+
+				setCarlaAvailable(newCarlaAvailable);
+
+				if (carList.length > 0) {
+					const newSelectedCar = carId
+						? carList.find((car) => car.carla_car_id === carId)
+						: carList[0];
+
+					setSelectedCar((prev) =>
+						prev?.car_id === newSelectedCar?.car_id
+							? prev
+							: newSelectedCar
+					);
 				} else {
-					throw new Error(`HTTP ${response.status}`);
+					setSelectedCar(null);
 				}
 			} catch (error) {
 				console.error("Error fetching car list:", error);
@@ -353,17 +395,14 @@ const CarlaDashboard = () => {
 				isFetching.current = false;
 			}
 		},
-		[carId, isAdmin]
-	); // Add isAdmin as dependency
+		[carId]
+	);
 
-	// 2. Update the useEffect
 	useEffect(() => {
-		// Initial fetch
 		fetchCarList();
-
-		// Setup interval
+		fetchUsers();
 		const carListInterval = setInterval(
-			() => fetchCarList(), // Call without arguments so manualRefresh is false
+			() => fetchCarList(),
 			carlaAvailable ? 60000 : 120000
 		);
 
@@ -387,7 +426,6 @@ const CarlaDashboard = () => {
 		} catch (error) {}
 	};
 
-	// REPLACE your existing setupVideoStream function with this:
 	const setupVideoStream = (car) => {
 		if (!car?.is_active_in_carla || !car?.carla_car_id) return;
 
@@ -395,7 +433,6 @@ const CarlaDashboard = () => {
 		const videoElement = videoRefs.current[carlaCarId];
 
 		if (videoElement) {
-			// Add ?t=Date.now() to force the browser to open a new connection
 			videoElement.src = `${CARLA_BRIDGE_URL}/video-stream/${carlaCarId}?t=${Date.now()}`;
 		}
 	};
@@ -408,11 +445,9 @@ const CarlaDashboard = () => {
 			);
 			return;
 		}
-		if (isNaN(parseFloat(newCarLat)) || isNaN(parseFloat(newCarLon))) {
-			showSnackbar(
-				"Latitude and Longitude must be valid numbers.",
-				"error"
-			);
+
+		if (isAdmin && !selectedOwner) {
+			showSnackbar("Please assign an owner to this vehicle.", "error");
 			return;
 		}
 
@@ -448,20 +483,29 @@ const CarlaDashboard = () => {
 					"CARLA bridge unavailable, registering in database only"
 				);
 			}
+			const payload = {
+				model: newCarModel.trim(),
+				license_plate: newCarId.trim(),
+				status: "active",
+				current_latitude: parseFloat(newCarLat) || 0,
+				current_longitude: parseFloat(newCarLon) || 0,
+				user_id:
+					isAdmin && selectedOwner
+						? selectedOwner.user_id
+						: undefined,
 
+				make: newCarMake.trim(),
+				year: parseInt(newCarYear, 10) || null,
+				vin: newCarVIN.trim(),
+				color: newCarColor.trim(),
+			};
 			const dbResponse = await fetch(`${API_URL}/cars`, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
 					Authorization: `Bearer ${token}`,
 				},
-				body: JSON.stringify({
-					model: newCarModel.trim(),
-					license_plate: newCarId.trim(),
-					status: "active",
-					current_latitude: parseFloat(newCarLat),
-					current_longitude: parseFloat(newCarLon),
-				}),
+				body: JSON.stringify(payload),
 			});
 
 			if (!dbResponse.ok) {
@@ -486,6 +530,12 @@ const CarlaDashboard = () => {
 			setNewCarLat("");
 			setNewCarLon("");
 			setTimeout(fetchCarList, 1000);
+			setSelectedOwner(null);
+
+			setNewCarMake("");
+			setNewCarYear("");
+			setNewCarVIN("");
+			setNewCarColor("");
 		} catch (error) {
 			showSnackbar(`Failed to add car: ${error.message}`, "error");
 		}
@@ -517,7 +567,6 @@ const CarlaDashboard = () => {
 				} catch (error) {}
 			}
 
-			// Call backend DELETE API to remove car from PostgreSQL
 			const response = await fetch(`${API_URL}/cars/${car.car_id}`, {
 				method: "DELETE",
 				headers: {
@@ -626,7 +675,6 @@ const CarlaDashboard = () => {
 		}
 	};
 
-	// REPLACE the useEffect at lines 708-715 with this:
 	useEffect(() => {
 		if (!selectedCar?.is_active_in_carla) return;
 
@@ -635,7 +683,6 @@ const CarlaDashboard = () => {
 			15000
 		);
 
-		// Small timeout ensures the DOM <img> element is ready before we set the src
 		const videoTimeout = setTimeout(() => {
 			setupVideoStream(selectedCar);
 		}, 100);
@@ -644,10 +691,8 @@ const CarlaDashboard = () => {
 			clearInterval(telemetryInterval);
 			clearTimeout(videoTimeout);
 		};
-		// Dependency on the whole object ensures it runs on refresh
 	}, [selectedCar]);
 
-	// Utility function to remove duplicate alerts based on `alert_id`
 	const removeDuplicateAlerts = (alerts) => {
 		const uniqueAlerts = new Map();
 		alerts.forEach((alert) => {
@@ -656,7 +701,6 @@ const CarlaDashboard = () => {
 		return Array.from(uniqueAlerts.values());
 	};
 
-	// Update fetchAlerts to remove duplicates
 	const fetchAlerts = useCallback(
 		async (page = 1) => {
 			if (!selectedCar) {
@@ -869,15 +913,28 @@ const CarlaDashboard = () => {
 											: null;
 
 										return (
-											<CarListItem
-												key={car.car_id || carlaCarId}
-												car={car}
-												isSelected={isSelected}
-												telemetry={telemetry}
-												onSelect={setSelectedCar}
-												onRemove={removeCar}
-												onEdit={openEditDialog}
-											/>
+											<Box key={car.car_id}>
+												{car.owner_name && isAdmin && (
+													<Typography
+														variant="caption"
+														display="block"
+														color="textSecondary"
+													>
+														Owner: {car.owner_name}
+													</Typography>
+												)}
+												<CarListItem
+													key={
+														car.car_id || carlaCarId
+													}
+													car={car}
+													isSelected={isSelected}
+													telemetry={telemetry}
+													onSelect={setSelectedCar}
+													onRemove={removeCar}
+													onEdit={openEditDialog}
+												/>
+											</Box>
 										);
 									})}
 								</Box>
@@ -1045,22 +1102,6 @@ const CarlaDashboard = () => {
 															{selectedCar.color ||
 																"N/A"}
 														</Typography>
-													</Grid>
-													<Grid item xs={12}>
-														<Alert
-															severity="info"
-															icon={
-																<VideocamOffIcon />
-															}
-														>
-															Live video feed and
-															telemetry are only
-															available when CARLA
-															bridge is connected.
-															This vehicle is
-															registered in the
-															database.
-														</Alert>
 													</Grid>
 												</Grid>
 											</CardContent>
@@ -1491,10 +1532,33 @@ const CarlaDashboard = () => {
 				>
 					<DialogTitle>Add New Vehicle</DialogTitle>
 					<DialogContent>
+						{isAdmin && (
+							<Box sx={{ mb: 3, mt: 1 }}>
+								<Autocomplete
+									id="owner-select"
+									options={availableUsers}
+									getOptionLabel={(option) =>
+										`${option.name} (${option.email})`
+									}
+									value={selectedOwner}
+									onChange={(event, newValue) => {
+										setSelectedOwner(newValue);
+									}}
+									renderInput={(params) => (
+										<TextField
+											{...params}
+											label="Assign Owner"
+											variant="outlined"
+											helperText="Search by name or email"
+										/>
+									)}
+								/>
+							</Box>
+						)}
 						<TextField
 							autoFocus
 							margin="dense"
-							label="License Plate / Car ID"
+							label="License Plate"
 							type="text"
 							fullWidth
 							variant="outlined"
@@ -1504,37 +1568,87 @@ const CarlaDashboard = () => {
 							helperText="Enter a unique identifier for the vehicle"
 							sx={{ mb: 3 }}
 						/>
-						<FormControl fullWidth sx={{ mb: 3 }}>
-							<InputLabel id="car-model-label">
-								Car Model
-							</InputLabel>
-							<Select
-								size="large"
-								labelId="car-model-label"
-								id="car-model-select"
-								value={newCarModel}
-								label="Car Model"
-								onChange={(e) => setNewCarModel(e.target.value)}
-							>
-								{CARLA_MODELS.map((model) => (
-									<MenuItem
-										key={model.value}
-										value={model.value}
-									>
-										{model.label} (
-										{model.value.split(".").pop()})
-									</MenuItem>
-								))}
-							</Select>
-							<Typography
-								variant="caption"
-								color="textSecondary"
-								sx={{ mt: 1, display: "block" }}
-							>
-								Select the CARLA blueprint for the new vehicle
-								(if CARLA is available).
-							</Typography>
-						</FormControl>
+						<Grid container spacing={2} sx={{ mb: 2 }}>
+							<Grid item xs={12} sm={6}>
+								<TextField
+									label="Make"
+									type="text"
+									fullWidth
+									variant="outlined"
+									size="small"
+									value={newCarMake}
+									onChange={(e) =>
+										setNewCarMake(e.target.value)
+									}
+								/>
+							</Grid>
+							<Grid item xs={12} sm={6}>
+								<TextField
+									label="Year"
+									type="number"
+									fullWidth
+									variant="outlined"
+									size="small"
+									value={newCarYear}
+									onChange={(e) =>
+										setNewCarYear(e.target.value)
+									}
+								/>
+							</Grid>
+							<Grid item xs={12} sm={6}>
+								<TextField
+									label="Color"
+									type="text"
+									fullWidth
+									variant="outlined"
+									size="small"
+									value={newCarColor}
+									onChange={(e) =>
+										setNewCarColor(e.target.value)
+									}
+								/>
+							</Grid>
+							<Grid item xs={12} sm={6}>
+								<TextField
+									label="VIN"
+									type="text"
+									fullWidth
+									variant="outlined"
+									size="small"
+									value={newCarVIN}
+									onChange={(e) =>
+										setNewCarVIN(e.target.value)
+									}
+								/>
+							</Grid>
+						</Grid>
+						<Autocomplete
+							id="car-model-autocomplete"
+							options={CARLA_MODELS}
+							getOptionLabel={(option) =>
+								`${option.label} (${option.value
+									.split(".")
+									.pop()})`
+							}
+							value={
+								CARLA_MODELS.find(
+									(m) => m.value === newCarModel
+								) || CARLA_MODELS[0]
+							}
+							onChange={(event, newValue) => {
+								setNewCarModel(newValue ? newValue.value : "");
+							}}
+							renderInput={(params) => (
+								<TextField
+									{...params}
+									label="Car Model"
+									margin="dense"
+									fullWidth
+									helperText="Select the model."
+								/>
+							)}
+							disableClearable
+						/>
 						<Typography
 							variant="h6"
 							gutterBottom
@@ -1572,15 +1686,6 @@ const CarlaDashboard = () => {
 								/>
 							</Grid>
 						</Grid>
-						<Typography
-							variant="caption"
-							color="textSecondary"
-							sx={{ mt: 1, display: "block" }}
-						>
-							Note: For CARLA, use map coordinates (X, Y). For
-							real-world locations, use standard
-							latitude/longitude.
-						</Typography>
 					</DialogContent>
 					<DialogActions>
 						<Button onClick={() => setAddCarDialogOpen(false)}>
@@ -1589,7 +1694,9 @@ const CarlaDashboard = () => {
 						<Button
 							onClick={addNewCar}
 							variant="contained"
-							disabled={!newCarId.trim()}
+							disabled={
+								!newCarId.trim() || (isAdmin && !selectedOwner)
+							}
 						>
 							Add Vehicle
 						</Button>
@@ -1667,32 +1774,33 @@ const CarlaDashboard = () => {
 								/>
 							</Grid>
 							<Grid item xs={12} md={6}>
-								<FormControl fullWidth margin="dense">
-									<InputLabel id="car-status-label">
-										Status
-									</InputLabel>
-									<Select
-										labelId="car-status-label"
-										label="Status"
-										value={editCarForm.status}
-										onChange={(e) =>
-											handleEditFieldChange(
-												"status",
-												e.target.value
-											)
-										}
-									>
-										<MenuItem value="active">
-											Active
-										</MenuItem>
-										<MenuItem value="inactive">
-											Inactive
-										</MenuItem>
-										<MenuItem value="maintenance">
-											Maintenance
-										</MenuItem>
-									</Select>
-								</FormControl>
+								<Autocomplete
+									id="car-status-autocomplete"
+									options={CAR_STATUSES}
+									value={
+										CAR_STATUSES.find(
+											(s) =>
+												s.value === editCarForm.status
+										) || CAR_STATUSES[0]
+									}
+									onChange={(event, newValue) => {
+										handleEditFieldChange(
+											"status",
+											newValue ? newValue.value : "" // Pass the 'value' string ('active', 'inactive', etc.)
+										);
+									}}
+									renderInput={(params) => (
+										<TextField
+											{...params}
+											label="Status"
+											margin="dense"
+											fullWidth
+											variant="outlined"
+										/>
+									)}
+									getOptionLabel={(option) => option.label}
+									disableClearable
+								/>
 							</Grid>
 							<Grid item xs={12} md={6}>
 								<TextField
