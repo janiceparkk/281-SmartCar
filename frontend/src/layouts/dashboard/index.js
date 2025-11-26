@@ -40,10 +40,15 @@ import AlertLogs from "layouts/dashboard/components/AlertLogs";
 import ServiceLogs from "./components/ServiceLogs";
 
 function Dashboard(props) {
-	const { fetchActiveCars, fetchActiveRequests, fetchActiveDevices } = props;
+	const {
+		fetchActiveCars,
+		fetchActiveAlerts,
+		fetchActiveRequests,
+		fetchActiveDevices,
+	} = props;
 
 	const [activeCars, setActiveCars] = useState(0);
-	const [activeAlerts, setActiveAlerts] = useState(20);
+	const [activeAlerts, setActiveAlerts] = useState(0);
 	const [activeRequests, setActiveRequests] = useState(0);
 	const [activeDevices, setActiveDevices] = useState(0);
 
@@ -56,6 +61,9 @@ function Dashboard(props) {
 	useEffect(() => {
 		fetchActiveCars().then((result) => {
 			setActiveCars(result.data.length);
+		});
+		fetchActiveAlerts().then((result) => {
+			setActiveAlerts(result.data.length);
 		});
 		fetchActiveRequests().then((result) => {
 			setActiveRequests(result.data.count);

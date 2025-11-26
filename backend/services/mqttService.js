@@ -41,7 +41,10 @@ class MQTTService {
 			});
 
 			this.client.on("error", (error) => {
-				console.error("[MQTT Service] Connection error:", error.message);
+				console.error(
+					"[MQTT Service] Connection error:",
+					error.message
+				);
 			});
 
 			this.client.on("close", () => {
@@ -54,10 +57,15 @@ class MQTTService {
 			});
 
 			this.client.on("reconnect", () => {
-				console.log("[MQTT Service] Attempting to reconnect to MQTT broker");
+				console.log(
+					"[MQTT Service] Attempting to reconnect to MQTT broker"
+				);
 			});
 		} catch (error) {
-			console.error("[MQTT Service] Initialization error:", error.message);
+			console.error(
+				"[MQTT Service] Initialization error:",
+				error.message
+			);
 			throw error;
 		}
 	}
@@ -78,13 +86,19 @@ class MQTTService {
 	 */
 	subscribe(topic) {
 		if (!this.isConnected) {
-			console.warn("[MQTT Service] Not connected. Cannot subscribe to:", topic);
+			console.warn(
+				"[MQTT Service] Not connected. Cannot subscribe to:",
+				topic
+			);
 			return;
 		}
 
 		this.client.subscribe(topic, (err) => {
 			if (err) {
-				console.error(`[MQTT Service] Subscription error for ${topic}:`, err.message);
+				console.error(
+					`[MQTT Service] Subscription error for ${topic}:`,
+					err.message
+				);
 			} else {
 				this.subscribedTopics.add(topic);
 				console.log(`[MQTT Service] Subscribed to: ${topic}`);
@@ -98,13 +112,19 @@ class MQTTService {
 	 */
 	unsubscribe(topic) {
 		if (!this.isConnected) {
-			console.warn("[MQTT Service] Not connected. Cannot unsubscribe from:", topic);
+			console.warn(
+				"[MQTT Service] Not connected. Cannot unsubscribe from:",
+				topic
+			);
 			return;
 		}
 
 		this.client.unsubscribe(topic, (err) => {
 			if (err) {
-				console.error(`[MQTT Service] Unsubscribe error for ${topic}:`, err.message);
+				console.error(
+					`[MQTT Service] Unsubscribe error for ${topic}:`,
+					err.message
+				);
 			} else {
 				this.subscribedTopics.delete(topic);
 				console.log(`[MQTT Service] Unsubscribed from: ${topic}`);
@@ -119,15 +139,22 @@ class MQTTService {
 	 */
 	publish(topic, message) {
 		if (!this.isConnected) {
-			console.warn("[MQTT Service] Not connected. Cannot publish to:", topic);
+			console.warn(
+				"[MQTT Service] Not connected. Cannot publish to:",
+				topic
+			);
 			return false;
 		}
 
-		const payload = typeof message === "string" ? message : JSON.stringify(message);
+		const payload =
+			typeof message === "string" ? message : JSON.stringify(message);
 
 		this.client.publish(topic, payload, (err) => {
 			if (err) {
-				console.error(`[MQTT Service] Publish error for ${topic}:`, err.message);
+				console.error(
+					`[MQTT Service] Publish error for ${topic}:`,
+					err.message
+				);
 			} else {
 				console.log(`[MQTT Service] Published to ${topic}`);
 			}
@@ -151,7 +178,9 @@ class MQTTService {
 			const deviceId = parseInt(topicParts[1]);
 
 			if (isNaN(deviceId)) {
-				console.warn(`[MQTT Service] Invalid device ID in topic: ${topic}`);
+				console.warn(
+					`[MQTT Service] Invalid device ID in topic: ${topic}`
+				);
 				return;
 			}
 
@@ -164,7 +193,10 @@ class MQTTService {
 				await this.handleTelemetry(deviceId, payload);
 			}
 		} catch (error) {
-			console.error(`[MQTT Service] Error handling message on ${topic}:`, error.message);
+			console.error(
+				`[MQTT Service] Error handling message on ${topic}:`,
+				error.message
+			);
 		}
 	}
 
@@ -176,9 +208,14 @@ class MQTTService {
 	async handleHeartbeat(deviceId, payload) {
 		try {
 			await updateHeartbeat(deviceId);
-			console.log(`[MQTT Service] Heartbeat processed for device ${deviceId}`);
+			console.log(
+				`[MQTT Service] Heartbeat processed for device ${deviceId}`
+			);
 		} catch (error) {
-			console.error(`[MQTT Service] Heartbeat processing error for device ${deviceId}:`, error.message);
+			console.error(
+				`[MQTT Service] Heartbeat processing error for device ${deviceId}:`,
+				error.message
+			);
 		}
 	}
 
@@ -199,9 +236,14 @@ class MQTTService {
 				this.deviceSessions.delete(deviceId);
 			}
 
-			console.log(`[MQTT Service] Status update for device ${deviceId}: ${status}`);
+			console.log(
+				`[MQTT Service] Status update for device ${deviceId}: ${status}`
+			);
 		} catch (error) {
-			console.error(`[MQTT Service] Status update error for device ${deviceId}:`, error.message);
+			console.error(
+				`[MQTT Service] Status update error for device ${deviceId}:`,
+				error.message
+			);
 		}
 	}
 
@@ -214,9 +256,14 @@ class MQTTService {
 		try {
 			// Store telemetry data
 			await storeTelemetry(deviceId, payload);
-			console.log(`[MQTT Service] Telemetry stored for device ${deviceId}`);
+			console.log(
+				`[MQTT Service] Telemetry stored for device ${deviceId}`
+			);
 		} catch (error) {
-			console.error(`[MQTT Service] Telemetry processing error for device ${deviceId}:`, error.message);
+			console.error(
+				`[MQTT Service] Telemetry processing error for device ${deviceId}:`,
+				error.message
+			);
 		}
 	}
 
