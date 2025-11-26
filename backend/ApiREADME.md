@@ -1,3 +1,15 @@
+### Setup before running server.js/all in one:
+
+## Before doing so, make sure you have mongodb installed. Get started here: https://www.mongodb.com/docs/manual/administration/install-community/?operating-system=linux&linux-distribution=ubuntu&linux-package=default&search-linux=with-search-linux
+
+```bash
+./initMongoDB.sh
+cd relationalDB/
+./initPsql.sh
+cd ..
+node server.js
+```
+
 ## ✅ Base URL
 
 `http://localhost:5000/api`

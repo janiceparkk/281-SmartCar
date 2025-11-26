@@ -1,47 +1,71 @@
 const express = require("express");
 const router = express.Router();
 const { OIDCUser } = require("./mongoSchema");
+const { pgPool } = require("../config/database");
 
 // GET /api/user/profile
 router.get("/profile", async (req, res) => {
 	try {
-		const { email, provider } = req.user;
+		console.log("/profile hit", req.user);
+		const { email } = req.user;
+		let user = null;
+		let pgUserId = null;
+		let cars = [];
 
-		let user,
-			cars = [];
+		const mongoUser = await OIDCUser.findOne({ email }).lean();
 
-		if (provider === "google") {
-			user = await OIDCUser.findOne({ email }).lean();
-			if (!user)
-				return res.status(404).json({ message: "User not found" });
-			user.role = "CarOwner";
-			user.profile_data = user.profile_data || {};
-		} else {
-			const result = await req.db.pgPool.query(
-				`SELECT u.user_id AS id, u.name, u.email, r.role_name AS role,
-                COALESCE(u.profile_data, '{}'::jsonb) AS profile_data
-         FROM users u
-         JOIN user_roles r ON u.role_id = r.role_id
-         WHERE u.email = $1`,
-				[email]
-			);
-
-			if (result.rows.length === 0)
-				return res.status(404).json({ message: "User not found" });
-
-			user = result.rows[0];
+		if (mongoUser && mongoUser.pg_user_id) {
+			pgUserId = mongoUser.pg_user_id;
 		}
 
-		// Fetch linked cars
-		const carResult = await req.db.pgPool.query(
-			`SELECT sc.car_id, sc.model, sc.status
-       FROM smart_cars sc
-       JOIN users u ON sc.user_id = u.user_id
-       WHERE u.email = $1`,
-			[email]
-		);
+		let userQuery, userParams;
 
-		cars = carResult.rows;
+		if (pgUserId) {
+			userQuery = `
+                SELECT u.user_id AS id, u.name, u.email, r.role_name AS role,
+                       COALESCE(u.profile_data, '{}'::jsonb) AS profile_data
+                FROM users u
+                JOIN user_roles r ON u.role_id = r.role_id
+                WHERE u.user_id = $1`;
+			userParams = [pgUserId];
+		} else {
+			userQuery = `
+                SELECT u.user_id AS id, u.name, u.email, r.role_name AS role,
+                       COALESCE(u.profile_data, '{}'::jsonb) AS profile_data
+                FROM users u
+                JOIN user_roles r ON u.role_id = r.role_id
+                WHERE u.email = $1`;
+			userParams = [email];
+		}
+
+		const userResult = await req.db.pgPool.query(userQuery, userParams);
+
+		if (userResult.rows.length === 0) {
+			if (mongoUser) {
+				user = {
+					id: null,
+					name: mongoUser.name,
+					email: mongoUser.email,
+					role: "CarOwner", // Default role
+					profile_data: mongoUser.profile_data || {},
+				};
+			} else {
+				return res.status(404).json({ message: "User not found" });
+			}
+		} else {
+			user = userResult.rows[0];
+			pgUserId = user.id;
+		}
+
+		if (pgUserId) {
+			const carResult = await req.db.pgPool.query(
+				`SELECT car_id, model, status
+                 FROM smart_cars
+                 WHERE user_id = $1`,
+				[pgUserId]
+			);
+			cars = carResult.rows;
+		}
 
 		return res.json({ user, cars });
 	} catch (error) {
@@ -102,6 +126,33 @@ router.put("/profile", async (req, res) => {
 		return res
 			.status(500)
 			.json({ message: "Failed to update user profile" });
+	}
+});
+
+// GET /api/user - Get all users (admin only)
+router.get("/", async (req, res) => {
+	try {
+		// Check if user is admin
+		if (req.user.role !== "Admin") {
+			return res.status(403).json({
+				message: "Forbidden: Admin access required",
+			});
+		}
+
+		const result = await pgPool.query(`
+			SELECT u.user_id, u.name, u.email, u.user_type, u.phone, u.company_name,
+				   ur.role_name, u.created_at, u.last_login
+			FROM users u
+			JOIN user_roles ur ON u.role_id = ur.role_id
+			ORDER BY u.name
+		`);
+
+		res.json(result.rows);
+	} catch (error) {
+		console.error("Error fetching users:", error);
+		res.status(500).json({
+			message: "Failed to retrieve users from database.",
+		});
 	}
 });
 

@@ -99,4 +99,22 @@ router.get("/", async (req, res) => {
 	}
 });
 
+/**
+ * @route   GET /api/alerts/car/:carId
+ * @desc    Get alerts for a specific car
+ * @access  Private
+ */
+router.get("/car/:carId", async (req, res) => {
+	try {
+		const { carId } = req.params;
+		const alerts = await getAlerts({ car_id: carId });
+		res.json(alerts);
+	} catch (error) {
+		console.error("Error getting alerts for car:", error);
+		res.status(500).json({
+			message: "Server error while getting alerts for the car.",
+		});
+	}
+});
+
 module.exports = router;

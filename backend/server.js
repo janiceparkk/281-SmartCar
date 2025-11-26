@@ -16,9 +16,11 @@ const alertRouter = require("./routes/alertRoutes");
 const deviceRouter = require("./routes/deviceRoutes");
 const serviceRequestRouter = require("./routes/serviceRequestRoutes");
 const userRoutes = require("./routes/userRoutes");
+const aiRouter = require("./routes/aiRoutes");
 
 // Import Services
 const mqttService = require("./services/mqttService");
+const authService = require("./services/authService");
 
 const app = express();
 
@@ -40,10 +42,44 @@ app.use(passport.initialize());
 app.use(passport.session());
 
 // --- CORS Configuration ---
+// Allow multiple origins for development (localhost on different ports)
+const allowedOrigins = process.env.FRONTEND_URL
+	? process.env.FRONTEND_URL.split(",").map((url) => url.trim())
+	: [
+			"http://localhost:3000",
+			"http://localhost:3001",
+			"http://localhost:5173", // Vite default port
+		];
+
 app.use(
 	cors({
-		origin: process.env.FRONTEND_URL || "http://localhost:3000",
+		origin: (origin, callback) => {
+			// Allow requests with no origin (like mobile apps, Postman, etc.)
+			if (!origin) return callback(null, true);
+
+			// Check if origin is in allowed list
+			if (allowedOrigins.indexOf(origin) !== -1) {
+				callback(null, true);
+			} else {
+				// In development, allow any localhost origin
+				if (
+					process.env.NODE_ENV !== "production" &&
+					origin.startsWith("http://localhost:")
+				) {
+					callback(null, true);
+				} else {
+					callback(new Error("Not allowed by CORS"));
+				}
+			}
+		},
 		credentials: true,
+		methods: ["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+		allowedHeaders: [
+			"Content-Type",
+			"Authorization",
+			"X-Service-Token",
+			"X-Requested-With",
+		],
 	})
 );
 
@@ -64,79 +100,18 @@ if (!JWT_SECRET) {
 	process.exit(1);
 }
 
-const jwt = require("jsonwebtoken");
-
 // --- OIDC Routes ---
-app.get("/auth/google", passport.authenticate("google"));
-
-app.get(
-	"/auth/google/callback",
-	passport.authenticate("google", {
-		session: false,
-		failureRedirect: "/login",
-	}),
-	(req, res) => {
-		const token = jwt.sign(
-			{
-				id: req.user.id,
-				email: req.user.email,
-				name: req.user.name,
-			},
-			process.env.JWT_SECRET,
-			{ expiresIn: "1d" }
-		);
-
-		res.redirect(
-			`${process.env.FRONTEND_URL || "http://localhost:3000"}/login?token=${token}`
-		);
-	}
-);
+app.get("/auth/google", authService.googleAuth);
+app.get("/auth/google/callback", authService.googleAuthCallback);
 
 // --- Auth Check Middleware ---
-const requireJWTAuth = (req, res, next) => {
-	const authHeader = req.headers.authorization;
-	if (!authHeader) {
-		return res.status(401).json({ error: "No token provided" });
-	}
-
-	const token = authHeader.split(" ")[1];
-	if (!token) {
-		return res.status(401).json({ error: "Invalid token format" });
-	}
-
-	try {
-		const decoded = jwt.verify(token, process.env.JWT_SECRET);
-		req.user = decoded; // e.g. { id, role }
-		next();
-	} catch (err) {
-		return res.status(403).json({ error: "Invalid or expired token" });
-	}
-};
+const requireJWTAuth = authService.requireJWTAuth;
 
 // --- User Info Endpoint ---
-app.get("/auth/user", (req, res) => {
-	if (req.isAuthenticated()) {
-		res.json({
-			user: req.user,
-			isAuthenticated: true,
-		});
-	} else {
-		res.json({
-			user: null,
-			isAuthenticated: false,
-		});
-	}
-});
+app.get("/auth/user", authService.getUserInfo);
 
 // --- Logout Endpoint ---
-app.post("/auth/logout", (req, res) => {
-	req.logout((err) => {
-		if (err) {
-			return res.status(500).json({ error: "Logout failed" });
-		}
-		res.json({ message: "Logged out successfully" });
-	});
-});
+app.post("/auth/logout", authService.logout);
 
 // PostgreSQL Pool
 const pgPool = new Pool({
@@ -183,20 +158,14 @@ app.use("/api/cars", requireJWTAuth, carRouter);
 app.use("/api/devices", requireJWTAuth, deviceRouter);
 app.use("/api/serviceRequests", requireJWTAuth, serviceRequestRouter);
 app.use("/api/user", requireJWTAuth, userRoutes);
+app.use("/api/ai", aiRouter); // AI routes handle their own auth (JWT or service token)
 
 // --- Public Routes ---
 app.use("/api/auth", authRouter);
 app.use("/api/alerts", alertRouter);
 
 // --- WebSocket with Authentication (Optional) ---
-wss.on("connection", (ws, req) => {
-	// You can add authentication to WebSocket connections here
-	console.log("[WS] New client connected");
-
-	ws.on("message", (message) => {
-		// Handle messages
-	});
-});
+wss.on("connection", authService.handleWebSocketConnection);
 
 // --- Start Server ---
 server.listen(PORT, async () => {

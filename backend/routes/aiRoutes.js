@@ -12,14 +12,35 @@ const router = express.Router();
 const upload = multer({ dest: os.tmpdir() });
 
 /**
+ * Service token middleware for CARLA bridge and other services
+ * Allows service-to-service communication without user JWT
+ */
+const serviceTokenMiddleware = (req, res, next) => {
+	const serviceToken =
+		req.headers["x-service-token"] || req.body.serviceToken;
+	const expectedToken =
+		process.env.SERVICE_TOKEN || "carla-bridge-service-token";
+
+	if (serviceToken === expectedToken) {
+		// Create a mock user object for service requests
+		req.user = { id: "service", role: "Service" };
+		return next();
+	}
+
+	// If no service token, fall back to regular auth
+	return authMiddleware(req, res, next);
+};
+
+/**
  * @route   POST /api/ai/process-audio
  * @desc    Receives an audio file, analyzes it, and creates an alert if necessary.
- * @access  Private
+ * @access  Private (JWT or Service Token)
  * @param   {File} audio - The audio file to be uploaded.
+ * @param   {String} carId - The car ID (in body or query)
  */
 router.post(
 	"/process-audio",
-	authMiddleware, // Using user auth for now, can be replaced with device-specific auth later
+	serviceTokenMiddleware, // Supports both JWT and service token
 	upload.single("audio"),
 	processAudio
 );

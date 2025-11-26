@@ -32,3 +32,8 @@ Thumbs.db
 # Build outputs
 dist/
 build/
+
+
+backend/audio_datasets/
+
+backend/audio_datasets/*/

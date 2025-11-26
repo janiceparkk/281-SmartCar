@@ -6,6 +6,7 @@ import Login from "layouts/LoginRegister/Login";
 import UserProfile from "layouts/UserProfile";
 import AlertDetails from "layouts/dashboard/components/AlertLogs/alertDetails";
 import LogDetails from "layouts/dashboard/components/ServiceLogs/logDetails";
+import CarlaDashboard from "layouts/CarlaDashboard";
 
 // IoT Device Management Layouts
 import IoTDevices from "layouts/iot-devices";
@@ -271,6 +272,21 @@ export const getRoutes = () => {
 			icon: <Icon fontSize="small">person</Icon>,
 			route: "/user/profile",
 			component: <ProtectedComponent component={<UserProfile />} />,
+			protected: true,
+		},
+		{
+			type: "collapse",
+			name: "Car Dashboard/Config",
+			key: "car-config",
+			icon: <Icon fontSize="small">config</Icon>,
+			route: "/car/config",
+			component: <ProtectedComponent component={<CarlaDashboard />} />,
+			protected: true,
+		},
+		{
+			key: "car-config-with-id",
+			route: "/car/config/:carId",
+			component: <ProtectedComponent component={<CarlaDashboard />} />,
 			protected: true,
 		},
 	];

@@ -117,10 +117,9 @@ sudo -u postgres psql -d "$PG_DATABASE" -c "SELECT user_id, role_id, user_type, 
 echo "Record counts:"
 sudo -u postgres psql -d "$PG_DATABASE" -c "SELECT COUNT(*) as user_roles_count FROM user_roles; SELECT COUNT(*) as users_count FROM users;"
 
+# --- 6. Granting User Permissions ---
 
-# Add this section after "--- 4. Verifying Data Insertion ---"
-
-echo "--- 5. Granting User Permissions ---"
+echo "--- 6. Granting User Permissions ---"
 
 sudo -u postgres psql -d "$PG_DATABASE" << EOF
 -- Grant necessary permissions to $PG_USER
@@ -138,3 +137,14 @@ ALTER USER $PG_USER SET search_path TO public;
 EOF
 
 echo "User permissions granted successfully."
+
+echo ""
+echo "=== SETUP COMPLETE ==="
+echo "Database: $PG_DATABASE"
+echo "Application user: $PG_USER"
+echo "Admin access:"
+echo "  Email: admin@system.local"
+echo "  Password: admin"
+echo "  Role: Admin"
+echo ""
+echo "You can now connect to the database and use the admin account for system administration."

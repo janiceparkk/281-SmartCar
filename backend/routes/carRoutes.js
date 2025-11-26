@@ -2,7 +2,10 @@ const express = require("express");
 const router = express.Router();
 const { pgPool } = require("../config/database");
 const { authMiddleware } = require("./helper");
-const { registerSmartCar } = require("../services/carService");
+const {
+	registerSmartCar,
+	updateCarDetails,
+} = require("../services/carService");
 
 router.use(authMiddleware);
 
@@ -90,6 +93,159 @@ router.get("/user", async (req, res) => {
 		console.error("Error fetching user cars:", error);
 		res.status(500).json({
 			message: "Failed to retrieve user cars from database.",
+		});
+	}
+});
+
+// GET /api/cars/carla  (Get user's cars with CARLA bridge status)
+// Returns all user cars from database, with optional CARLA connection status
+router.get("/carla", async (req, res) => {
+	try {
+		const userId = req.user.id;
+		if (!userId) {
+			return res.status(401).json({
+				message: "User ID not found. Please authenticate.",
+			});
+		}
+
+		const CARLA_BRIDGE_URL =
+			process.env.CARLA_BRIDGE_URL || "http://localhost:5001";
+
+		let userCars = [];
+		try {
+			const roleResult = await pgPool.query(
+				`SELECT ur.role_name 
+                 FROM users u 
+                 JOIN user_roles ur ON u.role_id = ur.role_id 
+                 WHERE u.user_id = $1`,
+				[userId]
+			);
+
+			const userRole = roleResult.rows[0]?.role_name;
+
+			if (userRole === "Admin") {
+				const allCarsResult = await pgPool.query(
+					`SELECT sc.*, u.name as owner_name, u.email as owner_email 
+                     FROM "smart_cars" sc
+                     LEFT JOIN users u ON sc.user_id = u.user_id 
+                     ORDER BY sc.car_id`
+				);
+				userCars = allCarsResult.rows;
+			} else {
+				const userCarsResult = await pgPool.query(
+					'SELECT * FROM "smart_cars" WHERE user_id = $1 ORDER BY car_id',
+					[userId]
+				);
+				userCars = userCarsResult.rows;
+			}
+		} catch (dbError) {
+			console.error("Database error fetching cars:", dbError);
+			return res.status(500).json({
+				message: "Failed to retrieve cars from database.",
+				error: dbError.message,
+			});
+		}
+
+		let carlaActiveCars = [];
+		let carlaAvailable = false;
+
+		const fetchWithTimeout = (url, timeout = 2000) => {
+			return Promise.race([
+				fetch(url),
+				new Promise((_, reject) =>
+					setTimeout(() => reject(new Error("Timeout")), timeout)
+				),
+			]);
+		};
+
+		try {
+			const carlaResponse = await fetchWithTimeout(
+				`${CARLA_BRIDGE_URL}/car-list`,
+				2000
+			);
+			if (carlaResponse && carlaResponse.ok) {
+				carlaActiveCars = await carlaResponse.json();
+				carlaAvailable = true;
+			}
+		} catch (error) {
+			console.log(
+				`CARLA bridge unavailable (${error.message}), showing cars from database only`
+			);
+		}
+
+		const mappedCars = userCars.map((car) => {
+			const carlaCarId = car.license_plate;
+			const isActiveInCarla =
+				carlaAvailable &&
+				carlaCarId &&
+				Array.isArray(carlaActiveCars) &&
+				carlaActiveCars.includes(carlaCarId);
+
+			return {
+				...car,
+				carla_car_id: carlaCarId || null,
+				is_active_in_carla: isActiveInCarla,
+				carla_available: carlaAvailable,
+			};
+		});
+
+		return res.json(mappedCars);
+	} catch (error) {
+		console.error("Error in /api/cars/carla endpoint:", error);
+		return res.status(500).json({
+			message: "Failed to retrieve user cars.",
+			error: error.message,
+		});
+	}
+});
+
+// PUT /api/cars/:carId (update details)
+const { deleteCar } = require("../services/carService");
+
+router.put("/:carId", async (req, res) => {
+	try {
+		const userId = req.user.id;
+		const carId = parseInt(req.params.carId, 10);
+
+		if (Number.isNaN(carId)) {
+			return res
+				.status(400)
+				.json({ message: "Invalid car ID. Expected a number." });
+		}
+
+		const updatedCar = await updateCarDetails(carId, req.body, userId);
+
+		return res.json(updatedCar);
+	} catch (error) {
+		console.error("Error updating car:", error);
+		res.status(500).json({
+			message: error.message || "Failed to update car.",
+		});
+	}
+});
+
+// DELETE /api/cars/:carId - delete a car
+router.delete("/:carId", async (req, res) => {
+	try {
+		const userId = req.user.id;
+		const carId = parseInt(req.params.carId, 10);
+
+		if (Number.isNaN(carId)) {
+			return res
+				.status(400)
+				.json({ message: "Invalid car ID. Expected a number." });
+		}
+
+		const deletedCar = await deleteCar(carId, userId);
+
+		return res.json({
+			message: "Car deleted successfully.",
+			car: deletedCar,
+		});
+	} catch (error) {
+		console.error("Error deleting car:", error);
+		res.status(500).json({
+			message: error.message || "Failed to delete car.",
 		});
 	}
 });
