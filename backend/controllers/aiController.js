@@ -1,17 +1,9 @@
 const fs = require("fs");
 const { analyzeAudio } = require("../services/aiService");
-const { logAudioAlert } = require("./alertController");
-
-// Confidence threshold to decide whether to create an alert
-const CONFIDENCE_THRESHOLD = 0.7;
+const { logAudioAlert } = require("../services/alertService");
 
 /**
  * Handles the audio processing workflow.
- * 1. Receives an uploaded file from multer.
- * 2. Calls the aiService to get a prediction.
- * 3. If confidence is high, calls the alertController to create an alert.
- * 4. Cleans up the temporary file.
- * 5. Sends a response to the client.
  */
 async function processAudio(req, res) {
 	if (!req.file) {
@@ -24,14 +16,12 @@ async function processAudio(req, res) {
 		// Call the AI service for analysis
 		const predictionResult = await analyzeAudio(tempFilePath);
 
-		if (
-			predictionResult &&
-			predictionResult.confidence >= CONFIDENCE_THRESHOLD
-		) {
+		if (predictionResult && predictionResult.prediction) {
+
 			let alertType = predictionResult.prediction;
 			// Translate 'car_crash' to 'collision' to match the schema's preferred term
-			if (alertType === "car_crash") {
-				alertType = "collision";
+			if (alertType === 'car_crash') {
+				alertType = 'collision';
 			}
 
 			const alertData = {
@@ -48,21 +38,16 @@ async function processAudio(req, res) {
 			message: "Audio processed successfully.",
 			analysis: predictionResult,
 		});
+
 	} catch (error) {
 		console.error("[aiController] Error processing audio:", error.message);
-		return res
-			.status(500)
-			.json({
-				message: "An internal error occurred during audio analysis.",
-			});
+		return res.status(500).json({ message: "An internal error occurred during audio analysis." });
+
 	} finally {
 		// Clean up the temporary file
 		fs.unlink(tempFilePath, (err) => {
 			if (err) {
-				console.error(
-					`[aiController] Failed to delete temporary file: ${tempFilePath}`,
-					err
-				);
+				console.error(`[aiController] Failed to delete temporary file: ${tempFilePath}`, err);
 			}
 		});
 	}
