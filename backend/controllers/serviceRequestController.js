@@ -127,6 +127,26 @@ async function getServiceRequests(params) {
 }
 
 /**
+ * Get Issue Types
+ * @returns {Array} - List of Issue Types
+ */
+async function getIssueTypes() {
+	try {
+		let query = `
+			SELECT *
+			FROM issue_types
+		`;
+
+		const result = await pgPool.query(query);
+		console.log(`[Service Request Manager] Retrieved Issue Types`);
+		return result.rows;
+	} catch (error) {
+		console.error("Error in getIssueTypes:", error.message);
+		throw error;
+	}
+}
+
+/**
  * Patch Service Request
  * @param {Object} params - Query parameters
  * @returns {Object} - Updated Service Request
@@ -176,6 +196,7 @@ async function patchServiceRequest(params) {
 }
 
 module.exports = {
+	getIssueTypes,
 	getServiceRequests,
 	postServiceRequest,
 	patchServiceRequest,
