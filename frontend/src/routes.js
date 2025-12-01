@@ -21,6 +21,8 @@ import FirmwareManagement from "layouts/iot-devices/FirmwareManagement";
 import Icon from "@mui/material/Icon";
 import ProtectedComponent from "components/ProtectedComponent";
 
+import DirectionsCarIcon from "@mui/icons-material/DirectionsCar";
+
 const routes = [
 	// Main app routes (protected)
 	{
@@ -286,9 +288,9 @@ export const getRoutes = () => {
 		},
 		{
 			type: "collapse",
-			name: "Car Dashboard/Config",
+			name: "Car Dashboard",
 			key: "car-config",
-			icon: <Icon fontSize="small">config</Icon>,
+			icon: <DirectionsCarIcon fontSize="small" />,
 			route: "/car/config",
 			component: <ProtectedComponent component={<CarlaDashboard />} />,
 			protected: true,
