@@ -7,9 +7,18 @@ import torch
 import torch.nn as nn
 import librosa
 import warnings
+from transformers import ClapProcessor, ClapModel
 
-# Suppress warnings from librosa
+
+# Suppress warnings from librosa and transformers
 warnings.filterwarnings('ignore', category=UserWarning, module='librosa')
+warnings.filterwarnings('ignore', category=FutureWarning, module='transformers')
+
+# enable GPU
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+
+# --- CRNN for Accident Detection ---
 
 class AudioCRNN(nn.Module):
     def __init__(self, num_classes=3):
@@ -42,7 +51,6 @@ class AudioCRNN(nn.Module):
         return x
 
 
-# Pre-processing Function
 def audio_to_melspec(audio_path, sr=16000, n_mels=128, n_fft=2048, hop_length=512, fixed_length=128):
     try:
         audio, _ = librosa.load(audio_path, sr=sr, duration=2.0)
@@ -68,60 +76,98 @@ def audio_to_melspec(audio_path, sr=16000, n_mels=128, n_fft=2048, hop_length=51
     return mel_spec_db
 
 
-# Prediction Function
-def predict(model_path, audio_path):
+def predict_crnn(model_path, audio_path):
     class_map = {0: 'glass_break', 1: 'traffic', 2: 'car_crash'}
-
-    model = AudioCRNN(num_classes=3)
+    model = AudioCRNN(num_classes=3).to(DEVICE)
     try:
-        model.load_state_dict(torch.load(model_path, map_location=torch.device('cpu')))
+        # Load model state dict, ensuring it's loaded to the correct device
+        model.load_state_dict(torch.load(model_path, map_location=DEVICE))
     except FileNotFoundError:
-        return {"error": f"Model file not found at {model_path}"}
+        return {"error": f"CRNN model file not found at {model_path}"}
     model.eval()
 
-    # Pre-process audio
     spec = audio_to_melspec(audio_path)
     if spec is None:
-        return {"error": f"Failed to process audio file at {audio_path}"}
+        return {"error": f"Failed to process audio file for CRNN at {audio_path}"}
 
-    # Perform prediction
     try:
-        spec_tensor = torch.tensor(spec, dtype=torch.float32).unsqueeze(0).unsqueeze(0)
-        output = model(spec_tensor)
-        probabilities = torch.softmax(output, dim=1).detach().numpy()[0]
+        spec_tensor = torch.tensor(spec, dtype=torch.float32).unsqueeze(0).unsqueeze(0).to(DEVICE)
+        with torch.no_grad():
+            output = model(spec_tensor)
+        probabilities = torch.softmax(output, dim=1).cpu().numpy()[0]
         max_prob_idx = np.argmax(probabilities)
 
-        result = {
+        return {
             "prediction": class_map[max_prob_idx],
             "confidence": float(probabilities[max_prob_idx]),
-            "probabilities": {
-                class_map[0]: float(probabilities[0]),
-                class_map[1]: float(probabilities[1]),
-                class_map[2]: float(probabilities[2])
-            }
+            "probabilities": {name: float(p) for name, p in zip(class_map.values(), probabilities)}
         }
-        return result
     except Exception as e:
-        return {"error": f"An error occurred during model inference: {str(e)}"}
+        return {"error": f"An error occurred during CRNN model inference: {str(e)}"}
 
 
-#  Main Execution Block
+# --- CLAP for Zero-Shot Classification ---
+try:
+    CLAP_PROCESSOR = ClapProcessor.from_pretrained("laion/clap-htsat-unfused")
+    CLAP_MODEL = ClapModel.from_pretrained("laion/clap-htsat-unfused").to(DEVICE)
+    CLAP_MODEL.eval()
+except Exception as e:
+    CLAP_PROCESSOR = None
+    CLAP_MODEL = None
+    # This allows the script to run even if Hugging Face is down or there's no internet.
+    # The error will be propagated in the final JSON output.
+
+
+def predict_clap(audio_path):
+    # performs zero-shot classification using the CLAP model.
+    if not CLAP_MODEL or not CLAP_PROCESSOR:
+        return {"error": "CLAP model is not available. Check internet connection or library installation."}
+
+    # text labels
+    text_labels = ["car crash", "glass break", "traffic", "siren", "human scream", "dog bark", "gunshot"]
+
+    try:
+        audio, sr = librosa.load(audio_path, sr=48000, duration=10.0)  # CLAP 48k SR and 10s audio
+        inputs = CLAP_PROCESSOR(text=text_labels, audios=audio, return_tensors="pt", padding=True, sampling_rate=sr).to(
+            DEVICE)
+
+        with torch.no_grad():
+            logits_per_audio = CLAP_MODEL(**inputs).logits_per_audio
+
+        probabilities = torch.softmax(logits_per_audio, dim=1).cpu().numpy()[0]
+        max_prob_idx = np.argmax(probabilities)
+
+        return {
+            "prediction": text_labels[max_prob_idx],
+            "confidence": float(probabilities[max_prob_idx]),
+            "similarities": {label: float(p) for label, p in zip(text_labels, probabilities)}
+        }
+    except Exception as e:
+        return {"error": f"An error occurred during CLAP model inference: {str(e)}"}
+
+
+# --- Main Execution Block ---
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Predict audio event from an audio file.")
-    parser.add_argument("model_path", type=str, help="Path to the trained .pth model file.")
+    parser = argparse.ArgumentParser(description="Predict audio events from an audio file using multiple models.")
+    parser.add_argument("model_path", type=str, help="Path to the trained CRNN .pth model file (accident_model.pth).")
     parser.add_argument("audio_path", type=str, help="Path to the audio file to be classified.")
-
     args = parser.parse_args()
 
-    # Check if files exist
     if not os.path.exists(args.model_path):
-        print(json.dumps({"error": f"Model file not found: {args.model_path}"}), file=sys.stderr)
+        print(json.dumps({"error": f"CRNN model file not found: {args.model_path}"}), file=sys.stderr)
         sys.exit(1)
-
     if not os.path.exists(args.audio_path):
         print(json.dumps({"error": f"Audio file not found: {args.audio_path}"}), file=sys.stderr)
         sys.exit(1)
 
-    # Get prediction and print as JSON
-    prediction_result = predict(args.model_path, args.audio_path)
-    print(json.dumps(prediction_result))
+    # predict
+    crnn_result = predict_crnn(args.model_path, args.audio_path)
+    clap_result = predict_clap(args.audio_path)
+
+    # results
+    final_result = {
+        "crnn_result": crnn_result,
+        "clap_result": clap_result,
+    }
+
+    print(json.dumps(final_result))
