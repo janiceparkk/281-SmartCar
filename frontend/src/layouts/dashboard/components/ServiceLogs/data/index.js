@@ -27,6 +27,7 @@ export default function useServiceLogsData() {
 				const list = Array.isArray(res.data)
 					? res.data
 					: res.data?.requests || [];
+
 				if (alive) setServiceLogs(list);
 			} catch (e) {
 				if (alive) setError(e);

@@ -4,6 +4,7 @@ import Dashboard from "layouts/dashboard";
 import SignUp from "layouts/LoginRegister/SignUp";
 import Login from "layouts/LoginRegister/Login";
 import UserProfile from "layouts/UserProfile";
+import ServiceForm from "layouts/serviceRequests";
 import AlertDetails from "layouts/dashboard/components/AlertLogs/alertDetails";
 import LogDetails from "layouts/dashboard/components/ServiceLogs/logDetails";
 import CarlaDashboard from "layouts/CarlaDashboard";
@@ -19,6 +20,8 @@ import FirmwareManagement from "layouts/iot-devices/FirmwareManagement";
 
 import Icon from "@mui/material/Icon";
 import ProtectedComponent from "components/ProtectedComponent";
+
+import DirectionsCarIcon from "@mui/icons-material/DirectionsCar";
 
 const routes = [
 	// Main app routes (protected)
@@ -74,6 +77,18 @@ export const getRoutes = () => {
 				}
 			);
 
+			return res;
+		} catch (error) {
+			return false;
+		}
+	}
+
+	async function fetchAlerts() {
+		try {
+			const token = localStorage.getItem("token");
+			const res = await axios.get("http://localhost:5000/api/alerts", {
+				headers: { Authorization: `Bearer ${token}` },
+			});
 			return res;
 		} catch (error) {
 			return false;
@@ -162,7 +177,6 @@ export const getRoutes = () => {
 	}
 
 	const routes = [
-		// Main app routes (protected)
 		{
 			type: "collapse",
 			name: "Dashboard",
@@ -263,8 +277,6 @@ export const getRoutes = () => {
 			component: <Login />,
 			public: true,
 		},
-
-		// User profile (protected)
 		{
 			type: "collapse",
 			name: "User Profile",
@@ -276,9 +288,9 @@ export const getRoutes = () => {
 		},
 		{
 			type: "collapse",
-			name: "Car Dashboard/Config",
+			name: "Car Dashboard",
 			key: "car-config",
-			icon: <Icon fontSize="small">config</Icon>,
+			icon: <DirectionsCarIcon fontSize="small" />,
 			route: "/car/config",
 			component: <ProtectedComponent component={<CarlaDashboard />} />,
 			protected: true,
@@ -289,13 +301,19 @@ export const getRoutes = () => {
 			component: <ProtectedComponent component={<CarlaDashboard />} />,
 			protected: true,
 		},
+		{
+			type: "collapse",
+			name: "Service Help",
+			key: "service-help",
+			icon: <Icon fontSize="small">help</Icon>,
+			route: "/service/help",
+			component: <ProtectedComponent component={<ServiceForm />} />,
+			protected: true,
+		},
 	];
 
-	// If not logged in, show only public routes
 	if (!loggedIn) {
 		return routes.filter((route) => route.public);
 	}
-
-	// If logged in, show only protected routes (and hide public auth routes)
 	return routes.filter((route) => route.protected);
 };

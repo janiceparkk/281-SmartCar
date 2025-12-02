@@ -138,7 +138,7 @@ export default function RoutesWrapper() {
 									? brandDark
 									: brandWhite
 							}
-							brandName="Material Dashboard 2"
+							brandName="Smart Car Management"
 							routes={routes}
 							onMouseEnter={handleOnMouseEnter}
 							onMouseLeave={handleOnMouseLeave}
@@ -176,7 +176,7 @@ export default function RoutesWrapper() {
 									? brandDark
 									: brandWhite
 							}
-							brandName="Material Dashboard 2"
+							brandName="Smart Car Management"
 							routes={routes}
 							onMouseEnter={handleOnMouseEnter}
 							onMouseLeave={handleOnMouseLeave}
