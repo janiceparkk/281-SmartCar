@@ -6,7 +6,9 @@ const {
 	acknowledgeAlert,
 	closeAlert,
 	createTestAlert,
-	getAlerts,
+    getAlerts,
+	createManualAlert,
+	updateAlert,
 } = require("../controllers/alertController");
 
 router.use(authMiddleware);
@@ -30,9 +32,7 @@ router.post("/:alertId/ack", async (req, res) => {
 		res.json(updatedAlert);
 	} catch (error) {
 		console.error("Error acknowledging alert:", error);
-		res.status(500).json({
-			message: "Server error while acknowledging alert.",
-		});
+		res.status(500).json({ message: "Server error while acknowledging alert." });
 	}
 });
 
@@ -67,20 +67,18 @@ router.post("/:alertId/close", async (req, res) => {
 router.post("/test", async (req, res) => {
 	if (req.user.role !== "Admin") {
 		return res.status(403).json({
-			message:
-				"Forbidden: You do not have permission to create test alerts.",
+			message: "Forbidden: You do not have permission to create test alerts.",
 		});
 	}
 
 	try {
-		// Pass the request body to the controller. If body is empty, the controller will use its default.
-		const newAlert = await createTestAlert(req.body);
+        // Pass the request body to the controller. If body is empty, the controller will use its default.
+		const newAlert = await createTestAlert(req.body); 
 		res.status(201).json(newAlert);
-	} catch (error) {
+	} catch (error)
+    {
 		console.error("Error creating test alert:", error);
-		res.status(500).json({
-			message: "Server error while creating a test alert.",
-		});
+		res.status(500).json({ message: "Server error while creating a test alert." });
 	}
 });
 
@@ -100,21 +98,43 @@ router.get("/", async (req, res) => {
 });
 
 /**
- * @route   GET /api/alerts/car/:carId
- * @desc    Get alerts for a specific car
+ * @route   POST /api/alerts
+ * @desc    Create a manual alert (for operators/rules engine).
  * @access  Private
  */
-router.get("/car/:carId", async (req, res) => {
+router.post("/", async (req, res) => {
+	// For now, allow any authenticated user to create manual alerts.
 	try {
-		const { carId } = req.params;
-		const alerts = await getAlerts({ car_id: carId });
-		res.json(alerts);
+		const newAlert = await createManualAlert(req.body);
+		res.status(201).json(newAlert);
 	} catch (error) {
-		console.error("Error getting alerts for car:", error);
-		res.status(500).json({
-			message: "Server error while getting alerts for the car.",
-		});
+		console.error("Error creating manual alert:", error);
+		res.status(500).json({ message: error.message || "Server error while creating a manual alert." });
 	}
 });
+
+/**
+ * @route   PATCH /api/alerts/:alertId
+ * @desc    Update an alert with notes or assign it.
+ * @access  Private
+ */
+router.patch("/:alertId", async (req, res) => {
+	try {
+		const { alertId } = req.params;
+		const updatedAlert = await updateAlert(alertId, req.body);
+
+		if (!updatedAlert) {
+			return res
+				.status(404)
+				.json({ message: `Alert with ID ${alertId} not found.` });
+		}
+
+		res.json(updatedAlert);
+	} catch (error) {
+		console.error("Error updating alert:", error);
+		res.status(500).json({ message: error.message || "Server error while updating alert." });
+	}
+});
+
 
 module.exports = router;

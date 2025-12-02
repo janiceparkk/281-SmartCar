@@ -91,9 +91,73 @@ async function getAlerts(queryParams = {}) {
 	}
 }
 
+/**
+ * Creates a manual alert from user input and triggers the notification workflow.
+ * @param {object} alertData - The data for the manual alert from the request body.
+ * @returns {Promise<object>} The newly created alert object.
+ */
+async function createManualAlert(alertData) {
+
+	if (!alertData.carId || !alertData.type) {
+		throw new Error("carId and type are required for a manual alert.");
+	}
+
+	try {
+		// reuse the logAudioAlert service
+		// A manual alert is considered high confidence by default.
+		const fullAlertData = {
+			confidence: 1.0,
+			classification: "Manual Entry",
+			...alertData,
+		};
+		const newAlert = await logAudioAlert(fullAlertData);
+		console.log(`[Controller] Manual alert created via service: ${newAlert.alert_id}`);
+		return newAlert;
+	} catch (error) {
+		console.error("[Controller] Failed to create a manual alert:", error.message);
+		throw error;
+	}
+}
+
+/**
+ * Updates an existing alert with new information (e.g., notes, assignment).
+ * @param {string} alertId The unique ID of the alert to update.
+ * @param {object} updateData The fields to update.
+ * @returns {Promise<object|null>} The updated alert object, or null if not found.
+ */
+async function updateAlert(alertId, updateData) {
+	// only allowedUpdates fields can be updated
+	const allowedUpdates = ["status", "assigned_to", "resolution_notes"];
+	const finalUpdateData = {};
+
+	for (const key of allowedUpdates) {
+		if (updateData[key] !== undefined) {
+			finalUpdateData[key] = updateData[key];
+		}
+	}
+
+	if (Object.keys(finalUpdateData).length === 0) {
+		throw new Error("No valid fields provided for update.");
+	}
+
+	try {
+		const updatedAlert = await Alert.findOneAndUpdate(
+			{ alert_id: alertId },
+			{ $set: finalUpdateData },
+			{ new: true } // Return the modified document
+		);
+		return updatedAlert;
+	} catch (error) {
+		console.error(`[DB] Failed to update alert ${alertId}:`, error);
+		throw error;
+	}
+}
+
 module.exports = {
 	acknowledgeAlert,
 	closeAlert,
 	createTestAlert,
     getAlerts,
+	createManualAlert,
+    updateAlert,
 };
