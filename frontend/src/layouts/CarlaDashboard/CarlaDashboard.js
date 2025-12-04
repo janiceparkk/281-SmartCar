@@ -38,10 +38,14 @@ import {
 	Add as AddIcon,
 	Delete as DeleteIcon,
 	Edit as EditIcon,
-	VideocamOff as VideocamOffIcon,
 	CloudOff as CloudOffIcon,
 } from "@mui/icons-material";
-import { GoogleMap, MarkerF, useJsApiLoader } from "@react-google-maps/api";
+import {
+	GoogleMap,
+	MarkerF,
+	InfoWindowF,
+	useJsApiLoader,
+} from "@react-google-maps/api";
 import { Skeleton } from "@mui/material";
 import DashboardNavbar from "examples/Navbars/DashboardNavbar";
 import DashboardLayout from "examples/LayoutContainers/DashboardLayout";
@@ -50,6 +54,7 @@ const API_URL = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
 const CARLA_BRIDGE_URL =
 	process.env.REACT_APP_CARLA_BRIDGE_URL || "http://localhost:5001";
 const GOOGLE_MAPS_API_KEY = process.env.REACT_APP_GOOGLE_MAPS_API_KEY || "";
+
 const CAR_STATUSES = [
 	{ label: "Active", value: "active" },
 	{ label: "Inactive", value: "inactive" },
@@ -63,28 +68,31 @@ const CARLA_MODELS = [
 	{ label: "Bicycle", value: "vehicle.bh.crossbike" },
 ];
 
+const CARLA_ORIGIN = { lat: 37.7749, lng: -122.4194 }; // San Francisco default
+
+// Helper to determine status color based on speed
+const getSpeedStatusColor = (speed) => {
+	if (speed > 50) return "error";
+	if (speed > 30) return "warning";
+	return "success";
+};
+
+const getSpeedStatusText = (speed) => {
+	if (speed > 50) return "High Speed";
+	if (speed > 30) return "Moderate Speed";
+	return "Normal";
+};
+
+// Car List Item Component (memoized)
 const CarListItem = React.memo(
-	({ car, isSelected, telemetry, onSelect, onRemove, onEdit }) => {
-		const carlaCarId = car.carla_car_id || car.license_plate;
+	({ car, isSelected, telemetry, onSelect, onRemove }) => {
+		const speed = telemetry?.speed || 0;
 		const carDisplayName =
 			car.model ||
 			car.make ||
 			car.license_plate ||
 			car.carla_car_id ||
 			`Car #${car.car_id}`;
-		const speed = telemetry?.speed || 0;
-
-		const getStatusColor = (speed) => {
-			if (speed > 50) return "error";
-			if (speed > 30) return "warning";
-			return "success";
-		};
-
-		const getStatusText = (speed) => {
-			if (speed > 50) return "High Speed";
-			if (speed > 30) return "Moderate Speed";
-			return "Normal";
-		};
 
 		return (
 			<Card
@@ -94,21 +102,29 @@ const CarListItem = React.memo(
 					border: isSelected ? 2 : 1,
 					borderColor: isSelected ? "primary.main" : "divider",
 					"&:hover": { boxShadow: 2 },
+					mb: 2,
 				}}
 				onClick={() => onSelect(car)}
 			>
 				<CardContent>
 					<Box sx={{ display: "flex", alignItems: "center", mb: 2 }}>
-						<Avatar sx={{ bgcolor: "primary.main", mr: 2 }}>
+						<Avatar
+							sx={{
+								bgcolor: isSelected
+									? "primary.main"
+									: "grey.500",
+								mr: 2,
+							}}
+						>
 							<CarIcon />
 						</Avatar>
-						<Box sx={{ flexGrow: 1 }}>
-							<Typography variant="h6">
+						<Box sx={{ flexGrow: 1, overflow: "hidden" }}>
+							<Typography variant="h6" noWrap>
 								{carDisplayName}
 							</Typography>
 							<Typography variant="body2" color="textSecondary">
 								{car.is_active_in_carla
-									? `Speed: ${speed} km/h`
+									? `Speed: ${Math.round(speed)} km/h`
 									: "Offline"}
 							</Typography>
 						</Box>
@@ -125,11 +141,11 @@ const CarListItem = React.memo(
 							</IconButton>
 						</Tooltip>
 					</Box>
-					<Box sx={{ display: "flex", gap: 1 }}>
+					<Box sx={{ display: "flex", gap: 1, flexWrap: "wrap" }}>
 						{car.is_active_in_carla && (
 							<Chip
-								label={getStatusText(speed)}
-								color={getStatusColor(speed)}
+								label={getSpeedStatusText(speed)}
+								color={getSpeedStatusColor(speed)}
 								size="small"
 							/>
 						)}
@@ -153,9 +169,9 @@ const CarListItem = React.memo(
 								e.stopPropagation();
 								onSelect(car);
 							}}
-							sx={{ color: isSelected ? "#fff" : "#000" }}
+							sx={{ color: isSelected ? "#fff" : "inherit" }}
 						>
-							{isSelected ? "Selected" : "Select"}
+							{isSelected ? "Viewing" : "Select"}
 						</Button>
 					</Box>
 				</CardContent>
@@ -168,7 +184,9 @@ const CarListItem = React.memo(
 			prevProps.telemetry?.speed === nextProps.telemetry?.speed &&
 			prevProps.car.car_id === nextProps.car.car_id &&
 			prevProps.car.is_active_in_carla ===
-				nextProps.car.is_active_in_carla
+				nextProps.car.is_active_in_carla &&
+			prevProps.car.current_latitude === nextProps.car.current_latitude &&
+			prevProps.car.current_longitude === nextProps.car.current_longitude
 		);
 	}
 );
@@ -177,10 +195,12 @@ const CarlaDashboard = () => {
 	const { carId } = useParams();
 	const [cars, setCars] = useState([]);
 	const [selectedCar, setSelectedCar] = useState(null);
-	const [telemetryData, setTelemetryData] = useState({});
+	const [telemetryData, setTelemetryData] = useState({}); // key: carla_car_id -> telemetry
 	const [error, setError] = useState(null);
 	const [loading, setLoading] = useState(true);
 	const [addCarDialogOpen, setAddCarDialogOpen] = useState(false);
+
+	// New Car Form State
 	const [newCarId, setNewCarId] = useState("");
 	const [newCarModel, setNewCarModel] = useState("vehicle.tesla.model3");
 	const [newCarLat, setNewCarLat] = useState("");
@@ -195,6 +215,8 @@ const CarlaDashboard = () => {
 		message: "",
 		severity: "success",
 	});
+
+	// Edit Car Form State
 	const [editCarDialogOpen, setEditCarDialogOpen] = useState(false);
 	const [editCarForm, setEditCarForm] = useState({
 		make: "",
@@ -206,37 +228,21 @@ const CarlaDashboard = () => {
 		current_latitude: "",
 		current_longitude: "",
 	});
+
 	const [carlaAvailable, setCarlaAvailable] = useState(false);
 	const videoRefs = useRef({});
 
-	const [alerts, setAlerts] = useState([]);
+	// Alerts handling
+	const [alerts, setAlerts] = useState([]); // selected car alerts
+	const [alertsByCar, setAlertsByCar] = useState({}); // global recent alerts keyed by carla_car_id or car_id
 	const [alertPage, setAlertPage] = useState(1);
 	const [loadingAlerts, setLoadingAlerts] = useState(false);
 
 	const [availableUsers, setAvailableUsers] = useState([]);
 	const [selectedOwner, setSelectedOwner] = useState(null);
 	const [isAdmin, setIsAdmin] = useState(false);
-	const fetchUsers = useCallback(async () => {
-		const token = getAuthToken();
-		if (!token) return;
 
-		try {
-			const response = await fetch(`${API_URL}/user`, {
-				headers: { Authorization: `Bearer ${token}` },
-			});
-
-			if (response.ok) {
-				const data = await response.json();
-				setAvailableUsers(data);
-				setIsAdmin(true); // If we can fetch users, we are admin
-			} else {
-				// If 403, regular user, just ignore
-				setIsAdmin(false);
-			}
-		} catch (error) {
-			console.error("Failed to fetch users", error);
-		}
-	}, []);
+	// Map & pulse state
 	const { isLoaded: isMapLoaded, loadError: mapLoadError } = useJsApiLoader({
 		id: "google-map-script",
 		googleMapsApiKey: GOOGLE_MAPS_API_KEY || "DUMMY_KEY",
@@ -246,7 +252,19 @@ const CarlaDashboard = () => {
 		() => ({ lat: 37.7749, lng: -122.4194 }),
 		[]
 	);
+	const mapRef = useRef(null);
+	const [mapZoom, setMapZoom] = useState(15);
+	const [pulse, setPulse] = useState(false); // toggles to create pulsing effect
+	const pulseIntervalRef = useRef(null);
+
 	const isFetching = useRef(false);
+
+	// Helpers
+	const getAuthToken = () => localStorage.getItem("token");
+
+	const showSnackbar = (message, severity = "success") => {
+		setSnackbar({ open: true, message, severity });
+	};
 
 	const carlaToLatLng = (x, y, originLat, originLng) => {
 		const metersPerDegreeLat = 111320;
@@ -259,40 +277,82 @@ const CarlaDashboard = () => {
 		return { lat, lng };
 	};
 
-	const CARLA_ORIGIN = { lat: 37.7749, lng: -122.4194 }; //  San Francisco
-
-	// Update mapCoordinates to use the transformation
-	const mapCoordinates = useMemo(() => {
-		if (!selectedCar) return null;
-		const carlaCarId =
-			selectedCar?.carla_car_id || selectedCar?.license_plate;
+	// Helper to get coordinates for ANY car (from telemetry OR database)
+	const getCarCoordinates = (car) => {
+		const carlaCarId = car.carla_car_id || car.license_plate;
 		const telemetry = carlaCarId ? telemetryData[carlaCarId] : null;
-		const x = telemetry?.lon ?? selectedCar.current_longitude ?? null;
-		const y = telemetry?.lat ?? selectedCar.current_latitude ?? null;
 
-		if (
-			x === null ||
-			y === null ||
-			Number.isNaN(Number(x)) ||
-			Number.isNaN(Number(y))
-		) {
-			return null;
+		// 1. Try Live Telemetry (assumes telemetry provides lat/lon in CARLA coordinates)
+		if (telemetry?.lat !== undefined && telemetry?.lon !== undefined) {
+			return carlaToLatLng(
+				telemetry.lon,
+				telemetry.lat,
+				CARLA_ORIGIN.lat,
+				CARLA_ORIGIN.lng
+			);
 		}
 
-		// Convert CARLA coordinates to latitude and longitude
-		return carlaToLatLng(
-			Number(x),
-			Number(y),
-			CARLA_ORIGIN.lat,
-			CARLA_ORIGIN.lng
-		);
-	}, [selectedCar, telemetryData]);
+		// 2. Try DB Coordinates (assume already lat/lng)
+		if (car.current_latitude && car.current_longitude) {
+			return {
+				lat: Number(car.current_latitude),
+				lng: Number(car.current_longitude),
+			};
+		}
 
-	const getAuthToken = () => localStorage.getItem("token");
+		return null;
+	};
+
+	// Map onLoad
+	const onMapLoad = useCallback((map) => {
+		mapRef.current = map;
+	}, []);
+
+	// Smooth recenter helper
+	const smoothRecenter = useCallback((latLng, zoom = 16) => {
+		if (!mapRef.current || !latLng) return;
+		try {
+			// panTo provides smooth panning
+			mapRef.current.panTo(latLng);
+			// animate zoom gently
+			if (
+				mapRef.current.getZoom &&
+				typeof mapRef.current.getZoom === "function"
+			) {
+				const currentZoom = mapRef.current.getZoom();
+				if (currentZoom < zoom) mapRef.current.setZoom(zoom);
+			}
+		} catch (e) {
+			// fallback
+			mapRef.current.setCenter(latLng);
+			mapRef.current.setZoom(zoom);
+		}
+	}, []);
+
+	// API Calls
+	const fetchUsers = useCallback(async () => {
+		const token = getAuthToken();
+		if (!token) return;
+
+		try {
+			const response = await fetch(`${API_URL}/user`, {
+				headers: { Authorization: `Bearer ${token}` },
+			});
+
+			if (response.ok) {
+				const data = await response.json();
+				setAvailableUsers(data);
+				setIsAdmin(true);
+			} else {
+				setIsAdmin(false);
+			}
+		} catch (error) {
+			console.error("Failed to fetch users", error);
+		}
+	}, []);
 
 	const fetchCarList = useCallback(
 		async (manualRefresh = false) => {
-			// Prevent overlapping fetches
 			if (isFetching.current) return;
 			isFetching.current = true;
 
@@ -314,6 +374,7 @@ const CarlaDashboard = () => {
 				let carList = [];
 				let newCarlaAvailable = false;
 
+				// Try to fetch from CARLA bridge endpoint
 				try {
 					const controller = new AbortController();
 					const timeoutId = setTimeout(
@@ -340,6 +401,7 @@ const CarlaDashboard = () => {
 						} else carList = [];
 					} else throw new Error(`HTTP ${response.status}`);
 				} catch (carlaError) {
+					// Fallback: Fetch user-owned cars from database only
 					try {
 						const fallbackResponse = await fetch(
 							`${API_URL}/cars/user`,
@@ -375,17 +437,12 @@ const CarlaDashboard = () => {
 				setCarlaAvailable(newCarlaAvailable);
 
 				if (carList.length > 0) {
-					const newSelectedCar = carId
-						? carList.find((car) => car.carla_car_id === carId)
-						: carList[0];
-
-					setSelectedCar((prev) =>
-						prev?.car_id === newSelectedCar?.car_id
-							? prev
-							: newSelectedCar
-					);
-				} else {
-					setSelectedCar(null);
+					if (!selectedCar && carId) {
+						const targetCar = carList.find(
+							(car) => car.carla_car_id === carId
+						);
+						if (targetCar) setSelectedCar(targetCar);
+					}
 				}
 			} catch (error) {
 				console.error("Error fetching car list:", error);
@@ -395,37 +452,44 @@ const CarlaDashboard = () => {
 				isFetching.current = false;
 			}
 		},
-		[carId]
+		[carId, selectedCar]
 	);
 
-	useEffect(() => {
-		fetchCarList();
-		fetchUsers();
-		const carListInterval = setInterval(
-			() => fetchCarList(),
-			carlaAvailable ? 60000 : 120000
+	// Fetch Telemetry for ALL Active Cars (for Map)
+	const fetchAllTelemetry = useCallback(async () => {
+		const activeCars = cars.filter(
+			(c) => c.is_active_in_carla && c.carla_car_id
 		);
+		if (activeCars.length === 0) return;
 
-		return () => clearInterval(carListInterval);
-	}, [fetchCarList, carlaAvailable]);
+		await Promise.all(
+			activeCars.map(async (car) => {
+				try {
+					const carlaCarId = car.carla_car_id;
+					const response = await fetch(
+						`${CARLA_BRIDGE_URL}/telemetry/${carlaCarId}`,
+						{
+							signal: AbortSignal.timeout(1500),
+						}
+					);
+					if (!response.ok) return;
+					const data = await response.json();
+					setTelemetryData((prev) => {
+						// avoid full replace if equal
+						const prevVal = prev[carlaCarId];
+						const nextVal = data.telemetry;
+						if (JSON.stringify(prevVal) === JSON.stringify(nextVal))
+							return prev;
+						return { ...prev, [carlaCarId]: nextVal };
+					});
+				} catch (error) {
+					// ignore per-car telemetry failures
+				}
+			})
+		);
+	}, [cars]);
 
-	const fetchTelemetry = async (car) => {
-		if (!car?.is_active_in_carla || !car?.carla_car_id) return;
-		try {
-			const carlaCarId = car.carla_car_id;
-			const response = await fetch(
-				`${CARLA_BRIDGE_URL}/telemetry/${carlaCarId}`,
-				{ signal: AbortSignal.timeout(2000) }
-			);
-			if (!response.ok) return;
-			const data = await response.json();
-			setTelemetryData((prev) => ({
-				...prev,
-				[carlaCarId]: data.telemetry,
-			}));
-		} catch (error) {}
-	};
-
+	// Setup Video Stream (Only for selected car)
 	const setupVideoStream = (car) => {
 		if (!car?.is_active_in_carla || !car?.carla_car_id) return;
 
@@ -437,6 +501,178 @@ const CarlaDashboard = () => {
 		}
 	};
 
+	// Effects
+
+	useEffect(() => {
+		fetchCarList();
+		fetchUsers();
+		const carListInterval = setInterval(
+			() => fetchCarList(),
+			carlaAvailable ? 60000 : 120000
+		);
+
+		return () => clearInterval(carListInterval);
+	}, [fetchCarList, carlaAvailable, fetchUsers]);
+
+	// Global Telemetry Loop
+	useEffect(() => {
+		if (!carlaAvailable) return;
+		const telemetryInterval = setInterval(fetchAllTelemetry, 2000);
+		void fetchAllTelemetry(); // initial fetch
+		return () => clearInterval(telemetryInterval);
+	}, [cars, carlaAvailable, fetchAllTelemetry]);
+
+	// Effect: Video Stream for Selected Car and Map Recenter
+	useEffect(() => {
+		if (!selectedCar) return;
+		const videoTimeout = setTimeout(() => {
+			setupVideoStream(selectedCar);
+		}, 200);
+		// auto-recenter map to selected car
+		const coords = getCarCoordinates(selectedCar);
+		if (coords) smoothRecenter(coords, 16);
+		return () => clearTimeout(videoTimeout);
+	}, [selectedCar, telemetryData, smoothRecenter]);
+
+	// Alerts Logic
+	// remove duplicates by alert_id
+	const removeDuplicateAlerts = (alertsArr) => {
+		const unique = new Map();
+		alertsArr.forEach((a) => unique.set(a.alert_id, a));
+		return Array.from(unique.values());
+	};
+
+	// fetch alerts for selectedCar
+	const fetchAlerts = useCallback(
+		async (page = 1) => {
+			if (!selectedCar) return;
+
+			setLoadingAlerts(true);
+			try {
+				const token = getAuthToken();
+				if (!token) return;
+
+				const carIdKey = selectedCar.carla_car_id || selectedCar.car_id;
+				const response = await fetch(
+					`${API_URL}/alerts/car/${carIdKey}?page=${page}&limit=10`,
+					{
+						headers: {
+							"Content-Type": "application/json",
+							Authorization: `Bearer ${token}`,
+						},
+					}
+				);
+
+				if (response.ok) {
+					const data = await response.json();
+					const newAlerts = Array.isArray(data) ? data : [];
+					setAlerts((prev) =>
+						removeDuplicateAlerts(
+							page === 1 ? newAlerts : [...prev, ...newAlerts]
+						)
+					);
+					setAlertPage(page);
+				}
+			} catch (error) {
+				console.error("Alert fetch error", error);
+			} finally {
+				setLoadingAlerts(false);
+			}
+		},
+		[selectedCar]
+	);
+
+	useEffect(() => {
+		fetchAlerts();
+	}, [fetchAlerts]);
+
+	// NEW: fetch recent alerts globally and map them to cars (used to decide map markers)
+	const fetchRecentAlertsPerCar = useCallback(async () => {
+		const token = getAuthToken();
+		if (!token) return;
+
+		const activeCarKeys = cars
+			.map((c) => c.carla_car_id || c.license_plate || c.car_id)
+			.filter(Boolean);
+		const newAlertsByCar = {};
+
+		// Fetch the latest alert for every active car concurrently
+		await Promise.all(
+			activeCarKeys.map(async (carKey) => {
+				try {
+					const response = await fetch(
+						`${API_URL}/alerts/car/${carKey}?limit=1&minutes=2`, // Assumes backend supports limit/minutes
+						{
+							signal: AbortSignal.timeout(2000),
+							headers: {
+								"Content-Type": "application/json",
+								Authorization: `Bearer ${token}`,
+							},
+						}
+					);
+
+					if (response.ok) {
+						const data = await response.json();
+						const recentAlerts = Array.isArray(data) ? data : [];
+
+						// Filter in frontend if backend can't filter by time
+						const twoMinutesAgo = Date.now() - 2 * 60 * 1000;
+
+						// Check if the single, latest alert is recent (within 2 minutes)
+						if (
+							recentAlerts.length > 0 &&
+							new Date(recentAlerts[0].createdAt).getTime() >=
+								twoMinutesAgo
+						) {
+							newAlertsByCar[carKey] = [recentAlerts[0]]; // Store just the recent one
+						}
+					}
+				} catch (err) {
+					// Ignore per-car alert failures
+				}
+			})
+		);
+
+		setAlertsByCar(newAlertsByCar);
+	}, [cars]); // Dependency on 'cars' ensures it checks the current fleet
+
+	// Alert Polling Loop
+	useEffect(() => {
+		let intervalId;
+		if (getAuthToken()) {
+			void fetchRecentAlertsPerCar(); // Initial fetch
+			intervalId = setInterval(() => fetchRecentAlertsPerCar(), 10000); // Poll every 10s
+		}
+		return () => clearInterval(intervalId);
+	}, [fetchRecentAlertsPerCar]);
+
+	// create pulsing effect if any recent alerts exist
+	useEffect(() => {
+		const hasAnyAlerts = Object.keys(alertsByCar).length > 0;
+		if (!hasAnyAlerts) {
+			setPulse(false);
+			if (pulseIntervalRef.current) {
+				clearInterval(pulseIntervalRef.current);
+				pulseIntervalRef.current = null;
+			}
+			return;
+		}
+		// start pulse toggler
+		setPulse(true);
+		if (!pulseIntervalRef.current) {
+			pulseIntervalRef.current = setInterval(() => {
+				setPulse((p) => !p);
+			}, 700);
+		}
+		return () => {
+			if (pulseIntervalRef.current) {
+				clearInterval(pulseIntervalRef.current);
+				pulseIntervalRef.current = null;
+			}
+		};
+	}, [alertsByCar]);
+
+	// CRUD Operations
 	const addNewCar = async () => {
 		if (!newCarId.trim() || !newCarModel.trim()) {
 			showSnackbar(
@@ -493,7 +729,6 @@ const CarlaDashboard = () => {
 					isAdmin && selectedOwner
 						? selectedOwner.user_id
 						: undefined,
-
 				make: newCarMake.trim(),
 				year: parseInt(newCarYear, 10) || null,
 				vin: newCarVIN.trim(),
@@ -531,7 +766,6 @@ const CarlaDashboard = () => {
 			setNewCarLon("");
 			setTimeout(fetchCarList, 1000);
 			setSelectedOwner(null);
-
 			setNewCarMake("");
 			setNewCarYear("");
 			setNewCarVIN("");
@@ -542,6 +776,9 @@ const CarlaDashboard = () => {
 	};
 
 	const removeCar = async (car) => {
+		if (!window.confirm("Are you sure you want to remove this vehicle?"))
+			return;
+
 		try {
 			const token = getAuthToken();
 			if (!token) {
@@ -553,12 +790,8 @@ const CarlaDashboard = () => {
 			}
 
 			const carlaCarId = car?.carla_car_id || car?.license_plate;
-			if (!carlaCarId) {
-				showSnackbar("Invalid car identifier", "error");
-				return;
-			}
 
-			if (car.is_active_in_carla) {
+			if (car.is_active_in_carla && carlaCarId) {
 				try {
 					await fetch(
 						`${CARLA_BRIDGE_URL}/remove-car/${carlaCarId}`,
@@ -582,14 +815,11 @@ const CarlaDashboard = () => {
 			}
 
 			showSnackbar("Car removed successfully", "success");
+			if (selectedCar?.car_id === car.car_id) setSelectedCar(null);
 			setTimeout(fetchCarList, 1000);
 		} catch (error) {
 			showSnackbar(`Failed to remove car: ${error.message}`, "error");
 		}
-	};
-
-	const showSnackbar = (message, severity = "success") => {
-		setSnackbar({ open: true, message, severity });
 	};
 
 	const openEditDialog = () => {
@@ -675,134 +905,8 @@ const CarlaDashboard = () => {
 		}
 	};
 
-	useEffect(() => {
-		if (!selectedCar?.is_active_in_carla) return;
-
-		const telemetryInterval = setInterval(
-			() => fetchTelemetry(selectedCar),
-			15000
-		);
-
-		const videoTimeout = setTimeout(() => {
-			setupVideoStream(selectedCar);
-		}, 100);
-
-		return () => {
-			clearInterval(telemetryInterval);
-			clearTimeout(videoTimeout);
-		};
-	}, [selectedCar]);
-
-	const removeDuplicateAlerts = (alerts) => {
-		const uniqueAlerts = new Map();
-		alerts.forEach((alert) => {
-			uniqueAlerts.set(alert.alert_id, alert);
-		});
-		return Array.from(uniqueAlerts.values());
-	};
-
-	const fetchAlerts = useCallback(
-		async (page = 1) => {
-			if (!selectedCar) {
-				setError("No car selected.");
-				return;
-			}
-
-			setLoadingAlerts(true);
-			try {
-				const token = getAuthToken();
-				if (!token) {
-					setError("Authentication required. Please log in.");
-					setLoadingAlerts(false);
-					return;
-				}
-
-				const carId = selectedCar.carla_car_id || selectedCar.car_id;
-				const response = await fetch(
-					`${API_URL}/alerts/car/${carId}?page=${page}&limit=10`,
-					{
-						headers: {
-							"Content-Type": "application/json",
-							Authorization: `Bearer ${token}`,
-						},
-					}
-				);
-
-				if (response.ok) {
-					const data = await response.json();
-					const newAlerts = Array.isArray(data) ? data : [];
-					setAlerts((prev) =>
-						removeDuplicateAlerts(
-							page === 1 ? newAlerts : [...prev, ...newAlerts]
-						)
-					);
-					setAlertPage(page);
-				} else {
-					const errorData = await response.json();
-					setError(errorData.message || "Failed to fetch alerts.");
-				}
-			} catch (error) {
-				setError(`Failed to fetch alerts: ${error.message}`);
-			} finally {
-				setLoadingAlerts(false);
-			}
-		},
-		[selectedCar]
-	);
-
-	useEffect(() => {
-		fetchAlerts();
-	}, [fetchAlerts]);
-
-	const getAlertsForCar = async (carId) => {
-		try {
-			const token = getAuthToken();
-			if (!token) {
-				setError("Authentication required. Please log in.");
-				return;
-			}
-
-			const response = await fetch(`${API_URL}/alerts/car/${carId}`, {
-				headers: {
-					"Content-Type": "application/json",
-					Authorization: `Bearer ${token}`,
-				},
-			});
-
-			if (response.ok) {
-				const data = await response.json();
-				setAlerts(data || []);
-			} else {
-				const errorData = await response.json();
-				setError(
-					errorData.message || "Failed to fetch alerts for the car."
-				);
-			}
-		} catch (error) {
-			setError(`Failed to fetch alerts for the car: ${error.message}`);
-		}
-	};
-
-	useEffect(() => {
-		if (selectedCar) {
-			const carId = selectedCar.carla_car_id || selectedCar.car_id;
-			getAlertsForCar(carId);
-		}
-	}, [selectedCar]);
-
-	const getStatusColor = (speed) => {
-		if (speed > 50) return "error";
-		if (speed > 30) return "warning";
-		return "success";
-	};
-
-	const getStatusText = (speed) => {
-		if (speed > 50) return "High Speed";
-		if (speed > 30) return "Moderate Speed";
-		return "Normal";
-	};
-
 	const getCarDisplayName = (car) => {
+		if (!car) return "Unknown";
 		return (
 			car.model ||
 			car.make ||
@@ -812,48 +916,227 @@ const CarlaDashboard = () => {
 		);
 	};
 
+	// Marker Icon Helpers
+	// Create an SVG data URL for marker with character text centered inside
+	const createSvgDataUrl = (
+		opts = {
+			bg: "#2e7d32",
+			label: null,
+			size: 36,
+			stroke: "#fff",
+			strokeWidth: 2,
+		}
+	) => {
+		const { bg, label, size, stroke, strokeWidth } = opts;
+		const inner = label
+			? `<text x="50%" y="55%" text-anchor="middle" font-family="Arial" font-size="${Math.round(
+					size * 0.45
+			  )}" font-weight="700" fill="#fff">${label}</text>`
+			: "";
+		const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='${size}' height='${size}' viewBox='0 0 ${size} ${size}'>
+			<circle cx='${size / 2}' cy='${size / 2}' r='${
+			size / 2 - strokeWidth
+		}' fill='${bg}' stroke='${stroke}' stroke-width='${strokeWidth}' />
+			${inner}
+		</svg>`;
+		return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
+	};
+
+	// choose icon for car based on alert presence and coordinate availability
+	const getMarkerIconForCar = (car, isSelected, pulseOn) => {
+		const pos = getCarCoordinates(car);
+		const carKey = car.carla_car_id || car.license_plate || car.car_id;
+		const recentAlerts = alertsByCar[carKey] || [];
+
+		const hasRecentAlert = recentAlerts.length > 0;
+		// Unknown telemetry/coords
+		if (!pos) {
+			return {
+				url: createSvgDataUrl({
+					bg: "#ffb300",
+					label: "?",
+					size: pulseOn ? 48 : 36,
+					stroke: "#fff",
+					strokeWidth: 3,
+				}),
+				scaledSize: new window.google.maps.Size(
+					pulseOn ? 48 : 36,
+					pulseOn ? 48 : 36
+				),
+				anchor: new window.google.maps.Point(
+					(pulseOn ? 48 : 36) / 2,
+					(pulseOn ? 48 : 36) / 2
+				),
+			};
+		}
+		// Alert
+		if (hasRecentAlert) {
+			return {
+				url: createSvgDataUrl({
+					bg: "#d32f2f",
+					label: "!",
+					size: pulseOn ? 56 : 40,
+					stroke: "#ffffff",
+					strokeWidth: 3,
+				}),
+				scaledSize: new window.google.maps.Size(
+					pulseOn ? 56 : 40,
+					pulseOn ? 56 : 40
+				),
+				anchor: new window.google.maps.Point(
+					(pulseOn ? 56 : 40) / 2,
+					(pulseOn ? 56 : 40) / 2
+				),
+			};
+		}
+		// Normal
+		return {
+			url: createSvgDataUrl({
+				bg: isSelected ? "#1976d2" : "#2e7d32",
+				label: null,
+				size: isSelected ? 44 : 32,
+				stroke: "#fff",
+				strokeWidth: 3,
+			}),
+			scaledSize: new window.google.maps.Size(
+				isSelected ? 44 : 32,
+				isSelected ? 44 : 32
+			),
+			anchor: new window.google.maps.Point(
+				isSelected ? 22 : 16,
+				isSelected ? 22 : 16
+			),
+		};
+	};
+
+	// Memoize Marker components so map doesn't re-render everything continuously
+	const markers = useMemo(() => {
+		if (!isMapLoaded) return null;
+		return cars.map((car) => {
+			const position = getCarCoordinates(car);
+			if (!position) {
+				return null;
+			}
+			const carlaCarId = car.carla_car_id || car.license_plate;
+			const tel = telemetryData[carlaCarId];
+			const speed = tel?.speed || 0;
+			const isSelected = selectedCar?.car_id === car.car_id;
+			// Determine if this car has an alert via alertsByCar
+			const carKey = carlaCarId || car.car_id;
+			const recentAlerts = alertsByCar[carKey] || [];
+			const hasAlert = recentAlerts.length > 0;
+
+			const icon = getMarkerIconForCar(
+				car,
+				isSelected,
+				pulse && hasAlert
+			);
+
+			return (
+				<MarkerF
+					key={car.car_id}
+					position={position}
+					onClick={() => {
+						setSelectedCar(car);
+						// When click marker, also fetch selected car alerts details
+						void fetchAlerts(1);
+					}}
+					icon={icon}
+					// subtle zIndex for selected/alert
+					zIndex={isSelected ? 999 : hasAlert ? 900 : 100}
+					animation={
+						window.google &&
+						window.google.maps &&
+						window.google.maps.Animation
+							? window.google.maps.Animation.DROP
+							: undefined
+					}
+				>
+					{selectedCar?.car_id === car.car_id && (
+						<InfoWindowF
+							position={position}
+							onCloseClick={() => setSelectedCar(null)}
+						>
+							<Box sx={{ p: 1, minWidth: 200 }}>
+								<Typography
+									variant="subtitle2"
+									fontWeight="bold"
+								>
+									{getCarDisplayName(car)}
+								</Typography>
+								<Typography variant="caption" display="block">
+									Status: {car.status || "Unknown"}
+								</Typography>
+								<Typography variant="caption" display="block">
+									Speed: {Math.round(speed)} km/h
+								</Typography>
+								{alertsByCar[carKey] &&
+									alertsByCar[carKey].length > 0 && (
+										<Typography
+											variant="caption"
+											color="error"
+											display="block"
+										>
+											Recent Alerts:{" "}
+											{alertsByCar[carKey].length}
+										</Typography>
+									)}
+							</Box>
+						</InfoWindowF>
+					)}
+				</MarkerF>
+			);
+		});
+		// eslint-disable-next-line react-hooks/exhaustive-deps
+	}, [cars, telemetryData, selectedCar, isMapLoaded, alertsByCar, pulse]);
+
+	// Render
 	return (
 		<DashboardLayout>
 			<DashboardNavbar />
 			<Container maxWidth="xl" sx={{ py: 4 }}>
 				<Box sx={{ mb: 4 }}>
-					<Typography variant="h4" gutterBottom>
-						Vehicle Dashboard
-					</Typography>
-					<Typography variant="body1" color="textSecondary">
-						Monitor and manage your vehicles
-					</Typography>
 					<Box
 						sx={{
-							mt: 2,
 							display: "flex",
-							gap: 2,
+							justifyContent: "space-between",
 							alignItems: "center",
 						}}
 					>
-						{carlaAvailable ? (
-							<Chip
-								icon={<CarIcon />}
-								label="CARLA Connected"
-								color="success"
-								size="small"
-							/>
-						) : (
-							<Chip
-								icon={<CloudOffIcon />}
-								label="CARLA Offline - Showing Database Cars"
-								color="default"
-								size="small"
-								variant="outlined"
-							/>
-						)}
-						<Button
-							variant="text"
-							startIcon={<AddIcon />}
-							onClick={() => setAddCarDialogOpen(true)}
-						>
-							Add Car
-						</Button>
+						<Box>
+							<Typography variant="h4" gutterBottom>
+								Car Real-Time Management
+							</Typography>
+							<Typography variant="body1" color="textSecondary">
+								Real-time monitoring and management
+							</Typography>
+						</Box>
+						<Box sx={{ display: "flex", gap: 2 }}>
+							{carlaAvailable ? (
+								<Chip
+									icon={<CarIcon />}
+									label="CARLA Online"
+									color="success"
+								/>
+							) : (
+								<Chip
+									icon={<CloudOffIcon />}
+									label="Offline Mode"
+									variant="outlined"
+								/>
+							)}
+							<Button
+								color="primary"
+								variant="contained"
+								startIcon={<AddIcon />}
+								onClick={() => setAddCarDialogOpen(true)}
+								sx={{
+									color: "#fff",
+								}}
+							>
+								Add Car
+							</Button>
+						</Box>
 					</Box>
 				</Box>
 
@@ -867,663 +1150,500 @@ const CarlaDashboard = () => {
 					</Alert>
 				)}
 
-				{loading && (
-					<Box>
-						<Skeleton
-							variant="rectangular"
-							height={200}
-							sx={{ mb: 2 }}
-						/>
-						<Skeleton variant="rectangular" height={400} />
+				{/* Map View */}
+				<Card sx={{ mb: 4, overflow: "hidden" }}>
+					<CardHeader
+						title="Fleet Map"
+						action={
+							<Tooltip title="Refresh Map">
+								<IconButton onClick={() => fetchCarList(true)}>
+									<RefreshIcon />
+								</IconButton>
+							</Tooltip>
+						}
+					/>
+					<Box
+						sx={{
+							height: 500,
+							width: "100%",
+							position: "relative",
+						}}
+					>
+						{!canUseMaps ? (
+							<Alert severity="warning" sx={{ m: 2 }}>
+								Google Maps API Key missing in environment
+								variables.
+							</Alert>
+						) : !isMapLoaded ? (
+							<Box
+								sx={{
+									display: "flex",
+									justifyContent: "center",
+									alignItems: "center",
+									height: "100%",
+								}}
+							>
+								<CircularProgress />
+							</Box>
+						) : mapLoadError ? (
+							<Alert severity="error" sx={{ m: 2 }}>
+								Map Error: {mapLoadError.message}
+							</Alert>
+						) : (
+							<GoogleMap
+								mapContainerStyle={{
+									width: "100%",
+									height: "100%",
+								}}
+								center={defaultMapCenter}
+								zoom={mapZoom}
+								onLoad={onMapLoad}
+								options={{
+									fullscreenControl: false,
+									streetViewControl: false,
+									mapTypeControl: false,
+								}}
+							>
+								{/* markers are memoized */}
+								{markers}
+							</GoogleMap>
+						)}
 					</Box>
-				)}
+				</Card>
 
-				{!loading && (
-					<Card sx={{ mb: 4 }}>
-						<CardHeader
-							title="Your Vehicles"
-							action={
-								<Tooltip title="Refresh Vehicle List">
-									<IconButton onClick={fetchCarList}>
-										<RefreshIcon />
-									</IconButton>
-								</Tooltip>
-							}
-						/>
-						<CardContent>
-							{cars.length > 0 ? (
-								<Box
-									sx={{
-										display: "flex",
-										gap: 2,
-										flexWrap: "wrap",
-									}}
-								>
-									{cars.map((car) => {
-										const carlaCarId =
-											car.carla_car_id ||
-											car.license_plate;
-										const isSelected =
-											selectedCar?.car_id ===
-												car.car_id ||
-											selectedCar?.license_plate ===
-												car.license_plate;
-										const telemetry = carlaCarId
-											? telemetryData[carlaCarId]
-											: null;
+				{/* BOTTOM SECTION: Split View (List & Details) */}
+				<Grid container spacing={3}>
+					{/* Left: Car List */}
+					<Grid item xs={12} md={4}>
+						<Card
+							sx={{
+								maxHeight: 800,
+								display: "flex",
+								flexDirection: "column",
+							}}
+						>
+							<CardHeader
+								title="Vehicles List"
+								subheader={`${cars.length} cars available`}
+							/>
+							<CardContent
+								sx={{ flexGrow: 1, overflowY: "auto", p: 2 }}
+							>
+								{loading ? (
+									<Box>
+										<Skeleton height={100} sx={{ mb: 1 }} />
+										<Skeleton height={100} sx={{ mb: 1 }} />
+									</Box>
+								) : cars.length === 0 ? (
+									<Typography
+										align="center"
+										color="textSecondary"
+									>
+										No vehicles found. Add one to get
+										started.
+									</Typography>
+								) : (
+									cars.map((car) => (
+										<CarListItem
+											key={car.car_id}
+											car={car}
+											isSelected={
+												selectedCar?.car_id ===
+												car.car_id
+											}
+											telemetry={
+												telemetryData[
+													car.carla_car_id ||
+														car.license_plate
+												]
+											}
+											onSelect={(c) => {
+												setSelectedCar(c);
+												void fetchAlerts(1); // fetch alerts when selecting
+											}}
+											onRemove={removeCar}
+										/>
+									))
+								)}
+							</CardContent>
+						</Card>
+					</Grid>
 
-										return (
-											<Box key={car.car_id}>
-												{car.owner_name && isAdmin && (
-													<Typography
-														variant="caption"
-														display="block"
-														color="textSecondary"
-													>
-														Owner: {car.owner_name}
-													</Typography>
-												)}
-												<CarListItem
-													key={
-														car.car_id || carlaCarId
-													}
-													car={car}
-													isSelected={isSelected}
-													telemetry={telemetry}
-													onSelect={setSelectedCar}
-													onRemove={removeCar}
-													onEdit={openEditDialog}
-												/>
-											</Box>
-										);
-									})}
-								</Box>
-							) : (
-								<Box sx={{ textAlign: "center", py: 4 }}>
+					{/* Right: Selected Car Details */}
+					<Grid item xs={12} md={8}>
+						{!selectedCar ? (
+							<Card
+								sx={{
+									height: "100%",
+									minHeight: 400,
+									display: "flex",
+									alignItems: "center",
+									justifyContent: "center",
+									bgcolor: "#f8f9fa",
+								}}
+							>
+								<Box textAlign="center">
 									<CarIcon
 										sx={{
-											fontSize: 48,
-											color: "text.secondary",
+											fontSize: 60,
+											color: "text.disabled",
 											mb: 2,
 										}}
 									/>
 									<Typography
 										variant="h6"
 										color="textSecondary"
-										gutterBottom
 									>
-										No vehicles registered
-									</Typography>
-									<Typography
-										variant="body2"
-										color="textSecondary"
-									>
-										Click "Add Car" to register a new
-										vehicle
+										Select a vehicle to view details
 									</Typography>
 								</Box>
-							)}
-						</CardContent>
-					</Card>
-				)}
-
-				{selectedCar &&
-					!loading &&
-					(() => {
-						const carlaCarId =
-							selectedCar?.carla_car_id ||
-							selectedCar?.license_plate;
-						const carDisplayName = getCarDisplayName(selectedCar);
-						const telemetry = carlaCarId
-							? telemetryData[carlaCarId]
-							: null;
-						const isCarlaActive = selectedCar.is_active_in_carla;
-
-						return (
-							<Grid container spacing={3}>
-								{isCarlaActive && (
-									<Grid item xs={12} md={8}>
-										<Card sx={{ height: "100%" }}>
-											<CardHeader
-												title={`Live Camera Feed - ${carDisplayName}`}
-												action={
-													<Chip
-														label="LIVE"
-														color="error"
-														size="small"
-													/>
-												}
-											/>
-											<CardContent>
-												<Box
-													sx={{
-														position: "relative",
-														width: "100%",
-														height: "400px",
-														bgcolor: "black",
-														borderRadius: 1,
-														overflow: "hidden",
-														display: "flex",
-														alignItems: "center",
-														justifyContent:
-															"center",
-													}}
-												>
-													<img
-														ref={(el) =>
-															(videoRefs.current[
-																carlaCarId
-															] = el)
-														}
-														alt={`Live feed from ${carDisplayName}`}
-														style={{
-															width: "100%",
-															height: "100%",
-															objectFit: "cover",
-														}}
-														onError={() => {}}
-													/>
-													{!telemetry && (
-														<Typography
-															position="absolute"
-															color="white"
-															variant="h6"
-														>
-															Waiting for video
-															stream...
-														</Typography>
-													)}
-												</Box>
-											</CardContent>
-										</Card>
-									</Grid>
-								)}
-
-								{!isCarlaActive && (
-									<Grid item xs={12} md={8}>
-										<Card sx={{ height: "100%" }}>
-											<CardHeader
-												title={`Vehicle Information - ${carDisplayName}`}
-												action={
-													<Chip
-														icon={<CloudOffIcon />}
-														label="Offline"
-														color="default"
-														size="small"
-													/>
-												}
-											/>
-											<CardContent>
-												<Grid container spacing={2}>
-													<Grid item xs={6} md={3}>
-														<Typography
-															variant="body2"
-															color="textSecondary"
-														>
-															Make
-														</Typography>
-														<Typography variant="h6">
-															{selectedCar.make ||
-																"N/A"}
-														</Typography>
-													</Grid>
-													<Grid item xs={6} md={3}>
-														<Typography
-															variant="body2"
-															color="textSecondary"
-														>
-															Model
-														</Typography>
-														<Typography variant="h6">
-															{selectedCar.model ||
-																"N/A"}
-														</Typography>
-													</Grid>
-													<Grid item xs={6} md={3}>
-														<Typography
-															variant="body2"
-															color="textSecondary"
-														>
-															Year
-														</Typography>
-														<Typography variant="h6">
-															{selectedCar.year ||
-																"N/A"}
-														</Typography>
-													</Grid>
-													<Grid item xs={6} md={3}>
-														<Typography
-															variant="body2"
-															color="textSecondary"
-														>
-															Color
-														</Typography>
-														<Typography variant="h6">
-															{selectedCar.color ||
-																"N/A"}
-														</Typography>
-													</Grid>
-												</Grid>
-											</CardContent>
-										</Card>
-									</Grid>
-								)}
-
-								<Grid item xs={12} md={isCarlaActive ? 4 : 12}>
+							</Card>
+						) : (
+							<Box>
+								{/* Active Car: Live Video */}
+								{selectedCar.is_active_in_carla && (
 									<Card sx={{ mb: 3 }}>
 										<CardHeader
-											title="Vehicle Telemetry"
+											title={`Live View: ${getCarDisplayName(
+												selectedCar
+											)}`}
 											action={
-												isCarlaActive && telemetry ? (
-													<Chip
-														label={getStatusText(
-															telemetry?.speed ||
-																0
-														)}
-														color={getStatusColor(
-															telemetry?.speed ||
-																0
-														)}
-													/>
-												) : (
-													<Chip
-														label="Database"
-														color="default"
-														size="small"
-													/>
-												)
+												<Chip
+													label="LIVE STREAM"
+													color="error"
+													size="small"
+												/>
 											}
 										/>
-										<CardContent>
-											{isCarlaActive && telemetry ? (
-												<>
-													<Box sx={{ mb: 3 }}>
+										<CardContent sx={{ p: 0 }}>
+											<Box
+												sx={{
+													width: "100%",
+													height: "400px",
+													bgcolor: "black",
+													display: "flex",
+													alignItems: "center",
+													justifyContent: "center",
+													position: "relative",
+													overflow: "hidden",
+												}}
+											>
+												<img
+													ref={(el) =>
+														(videoRefs.current[
+															selectedCar.carla_car_id
+														] = el)
+													}
+													alt="Stream"
+													style={{
+														width: "100%",
+														height: "100%",
+														objectFit: "contain",
+													}}
+													onError={(e) => {
+														e.target.style.display =
+															"none";
+													}}
+												/>
+												{!telemetryData[
+													selectedCar.carla_car_id
+												] && (
+													<Typography
+														color="white"
+														position="absolute"
+													>
+														Connecting to video
+														feed...
+													</Typography>
+												)}
+											</Box>
+										</CardContent>
+									</Card>
+								)}
+
+								{/* Telemetry & Info Cards */}
+								<Grid container spacing={3}>
+									<Grid item xs={12} md={6}>
+										<Card sx={{ height: "100%" }}>
+											<CardHeader title="Telemetry Data" />
+											<CardContent>
+												{selectedCar.is_active_in_carla ? (
+													<>
 														<Box
 															sx={{
-																display: "flex",
-																alignItems:
+																mb: 3,
+																textAlign:
 																	"center",
-																mb: 1,
 															}}
 														>
-															<SpeedIcon
-																color="primary"
-																sx={{ mr: 1 }}
-															/>
 															<Typography
 																variant="body2"
 																color="textSecondary"
 															>
 																Current Speed
 															</Typography>
+															<Typography
+																variant="h3"
+																color="primary"
+															>
+																{telemetryData[
+																	selectedCar
+																		.carla_car_id
+																]?.speed || 0}
+																<Typography
+																	component="span"
+																	variant="h6"
+																	color="textSecondary"
+																>
+																	{" "}
+																	km/h
+																</Typography>
+															</Typography>
+															<LinearProgress
+																variant="determinate"
+																value={Math.min(
+																	telemetryData[
+																		selectedCar
+																			.carla_car_id
+																	]?.speed ||
+																		0,
+																	100
+																)}
+																sx={{
+																	mt: 1,
+																	height: 10,
+																	borderRadius: 5,
+																}}
+																color={getSpeedStatusColor(
+																	telemetryData[
+																		selectedCar
+																			.carla_car_id
+																	]?.speed ||
+																		0
+																)}
+															/>
 														</Box>
-														<Typography
-															variant="h4"
-															color="primary"
-															gutterBottom
+														<Grid
+															container
+															spacing={1}
 														>
-															{telemetry?.speed ||
-																0}{" "}
-															km/h
-														</Typography>
-														<LinearProgress
-															variant="determinate"
-															value={Math.min(
-																((telemetry?.speed ||
-																	0) /
-																	100) *
-																	100,
-																100
-															)}
-															sx={{
-																height: 8,
-																borderRadius: 4,
-																mb: 1,
-															}}
-														/>
-													</Box>
-												</>
-											) : (
-												<Alert severity="info">
-													Live telemetry unavailable.
-													Using stored location data
-													from database.
-												</Alert>
-											)}
-
-											<Box sx={{ mb: 2 }}>
-												<Box
-													sx={{
-														display: "flex",
-														alignItems: "center",
-														mb: 1,
-													}}
-												>
-													<LocationIcon
-														color="secondary"
-														sx={{ mr: 1 }}
-													/>
-													<Typography
-														variant="body2"
-														color="textSecondary"
+															<Grid item xs={6}>
+																<Typography
+																	variant="caption"
+																	color="textSecondary"
+																>
+																	Latitude
+																</Typography>
+																<Typography
+																	variant="body1"
+																	fontFamily="monospace"
+																>
+																	{Number(
+																		telemetryData[
+																			selectedCar
+																				.carla_car_id
+																		]
+																			?.lat ||
+																			0
+																	).toFixed(
+																		6
+																	)}
+																</Typography>
+															</Grid>
+															<Grid item xs={6}>
+																<Typography
+																	variant="caption"
+																	color="textSecondary"
+																>
+																	Longitude
+																</Typography>
+																<Typography
+																	variant="body1"
+																	fontFamily="monospace"
+																>
+																	{Number(
+																		telemetryData[
+																			selectedCar
+																				.carla_car_id
+																		]
+																			?.lon ||
+																			0
+																	).toFixed(
+																		6
+																	)}
+																</Typography>
+															</Grid>
+														</Grid>
+													</>
+												) : (
+													<Alert
+														severity="info"
+														icon={<CloudOffIcon />}
 													>
-														Location Coordinates
-													</Typography>
-												</Box>
+														Vehicle is offline.
+														Showing last known
+														database info.
+													</Alert>
+												)}
+											</CardContent>
+										</Card>
+									</Grid>
+
+									<Grid item xs={12} md={6}>
+										<Card sx={{ height: "100%" }}>
+											<CardHeader title="Vehicle Details" />
+											<CardContent>
 												<Grid container spacing={2}>
 													<Grid item xs={6}>
 														<Typography
-															variant="body2"
+															variant="caption"
 															color="textSecondary"
 														>
-															Latitude
+															Make/Model
 														</Typography>
-														<Typography
-															variant="h6"
-															fontFamily="monospace"
-														>
-															{telemetry?.lat !==
-																undefined &&
-															telemetry?.lat !==
-																null
-																? Number(
-																		telemetry.lat
-																  ).toFixed(6)
-																: selectedCar.current_latitude !==
-																		undefined &&
-																  selectedCar.current_latitude !==
-																		null
-																? Number(
-																		selectedCar.current_latitude
-																  ).toFixed(6)
-																: "N/A"}
+														<Typography variant="body1">
+															{selectedCar.make}{" "}
+															{selectedCar.model}
 														</Typography>
 													</Grid>
 													<Grid item xs={6}>
 														<Typography
-															variant="body2"
+															variant="caption"
 															color="textSecondary"
 														>
-															Longitude
+															Color
 														</Typography>
-														<Typography
-															variant="h6"
-															fontFamily="monospace"
-														>
-															{telemetry?.lon !==
-																undefined &&
-															telemetry?.lon !==
-																null
-																? Number(
-																		telemetry.lon
-																  ).toFixed(6)
-																: selectedCar.current_longitude !==
-																		undefined &&
-																  selectedCar.current_longitude !==
-																		null
-																? Number(
-																		selectedCar.current_longitude
-																  ).toFixed(6)
-																: "N/A"}
+														<Typography variant="body1">
+															{selectedCar.color ||
+																"N/A"}
 														</Typography>
 													</Grid>
+													<Grid item xs={6}>
+														<Typography
+															variant="caption"
+															color="textSecondary"
+														>
+															Year
+														</Typography>
+														<Typography variant="body1">
+															{selectedCar.year ||
+																"N/A"}
+														</Typography>
+													</Grid>
+													<Grid item xs={6}>
+														<Typography
+															variant="caption"
+															color="textSecondary"
+														>
+															Status
+														</Typography>
+														<Chip
+															label={
+																selectedCar.status
+															}
+															size="small"
+															variant="outlined"
+														/>
+													</Grid>
 												</Grid>
-											</Box>
-
-											<Box>
-												<Typography
-													variant="body2"
-													color="textSecondary"
-													gutterBottom
-												>
-													Last Updated
-												</Typography>
-												<Typography variant="body2">
-													{telemetry?.timestamp
-														? new Date(
-																telemetry.timestamp *
-																	1000
-														  ).toLocaleTimeString()
-														: selectedCar.last_updated
-														? new Date(
-																selectedCar.last_updated
-														  ).toLocaleString()
-														: "Never"}
-												</Typography>
-											</Box>
-										</CardContent>
-									</Card>
-
-									<Card>
-										<CardHeader title="Quick Actions" />
-										<CardContent>
-											<Box
-												sx={{
-													display: "flex",
-													gap: 1,
-													flexWrap: "wrap",
-												}}
-											>
-												<Button
-													sx={{ color: "#000000" }}
-													color="primary"
-													variant="contained"
-													startIcon={<RefreshIcon />}
-													onClick={fetchCarList}
-												>
-													Refresh
-												</Button>
-												<Button
-													variant="contained"
-													sx={{ color: "#000000" }}
-													color="error"
-													startIcon={<DeleteIcon />}
-													onClick={() =>
-														removeCar(selectedCar)
-													}
-												>
-													Remove Car
-												</Button>
-												<Button
-													variant="contained"
-													sx={{ color: "#000000" }}
-													color="info"
-													startIcon={<EditIcon />}
-													onClick={openEditDialog}
-													disabled={!selectedCar}
-												>
-													Edit Details
-												</Button>
-											</Box>
-										</CardContent>
-									</Card>
-								</Grid>
-
-								<Grid item xs={12}>
-									<Card>
-										<CardHeader title="Vehicle Location" />
-										<CardContent>
-											{!mapCoordinates ? (
 												<Box
 													sx={{
+														mt: 3,
 														display: "flex",
-														justifyContent:
-															"center",
-														alignItems: "center",
-														height: 400,
+														gap: 1,
 													}}
 												>
-													<CircularProgress />
-												</Box>
-											) : !canUseMaps ? (
-												<Alert severity="warning">
-													Set{" "}
-													<code>
-														REACT_APP_GOOGLE_MAPS_API_KEY
-													</code>{" "}
-													in your frontend environment
-													to enable map rendering.
-												</Alert>
-											) : mapLoadError ? (
-												<Alert severity="error">
-													Failed to load Google Maps:{" "}
-													{mapLoadError.message}
-												</Alert>
-											) : !isMapLoaded ? (
-												<Box
-													sx={{
-														display: "flex",
-														justifyContent:
-															"center",
-														py: 4,
-													}}
-												>
-													<CircularProgress />
-												</Box>
-											) : (
-												<Box
-													sx={{
-														width: "100%",
-														height: 400,
-														borderRadius: 1,
-														overflow: "hidden",
-													}}
-												>
-													<GoogleMap
-														mapContainerStyle={{
-															width: "100%",
-															height: "100%",
-														}}
-														center={
-															mapCoordinates ||
-															defaultMapCenter
-														}
-														zoom={16}
-														options={{
-															fullscreenControl: false,
-															mapTypeControl: false,
-															streetViewControl: false,
+													<Button
+														variant="contained" // CHANGED to 'contained'
+														startIcon={<EditIcon />}
+														size="small"
+														onClick={openEditDialog}
+														sx={{
+															color: "#fff",
 														}}
 													>
-														<MarkerF
-															position={
-																mapCoordinates
-															}
-															label={
-																selectedCar?.model ||
-																selectedCar?.license_plate ||
-																"Vehicle"
-															}
-														/>
-													</GoogleMap>
+														Edit
+													</Button>
+													<Button
+														variant="contained" // CHANGED to 'contained'
+														color="error"
+														startIcon={
+															<DeleteIcon />
+														}
+														size="small"
+														onClick={() =>
+															removeCar(
+																selectedCar
+															)
+														}
+													>
+														Remove
+													</Button>
 												</Box>
-											)}
-										</CardContent>
-									</Card>
-								</Grid>
+											</CardContent>
+										</Card>
+									</Grid>
 
-								<Grid item xs={12}>
-									<Card>
-										<CardHeader title="Recent Alerts" />
-										<CardContent>
-											{alerts &&
-											alerts.length === 0 &&
-											!loadingAlerts ? (
-												<Typography
-													variant="body2"
-													color="textSecondary"
-												>
-													No alerts available.
-												</Typography>
-											) : (
-												<>
+									{/* Alerts Section */}
+									<Grid item xs={12}>
+										<Card>
+											<CardHeader title="Recent Alerts" />
+											<CardContent>
+												{alerts.length === 0 ? (
+													<Typography
+														color="textSecondary"
+														variant="body2"
+													>
+														No alerts recorded.
+													</Typography>
+												) : (
 													<Box
 														sx={{
-															maxHeight: 300,
+															maxHeight: 200,
 															overflowY: "auto",
 														}}
 													>
 														{alerts.map((alert) => (
-															<Card
+															<Alert
+																severity="warning"
 																key={
 																	alert.alert_id
 																}
-																sx={{
-																	mb: 2,
-																}}
+																sx={{ mb: 1 }}
 															>
-																<CardContent>
-																	<Typography
-																		variant="h6"
-																		gutterBottom
-																	>
-																		Alert
-																		Type:{" "}
-																		{
-																			alert.alert_type
-																		}
-																	</Typography>
-																	<Typography
-																		variant="body2"
-																		color="textSecondary"
-																	>
-																		Confidence:{" "}
-																		{Math.round(
-																			alert.confidence_score *
-																				100
-																		)}
-																		%
-																	</Typography>
-																	<Typography
-																		variant="body2"
-																		color="textSecondary"
-																	>
-																		Status:{" "}
-																		{
-																			alert.status
-																		}
-																	</Typography>
-																	<Typography
-																		variant="body2"
-																		color="textSecondary"
-																	>
-																		Created
-																		At:{" "}
-																		{new Date(
-																			alert.createdAt
-																		).toLocaleString()}
-																	</Typography>
-																</CardContent>
-															</Card>
+																<Typography variant="subtitle2">
+																	{
+																		alert.alert_type
+																	}
+																</Typography>
+																<Typography variant="caption">
+																	{new Date(
+																		alert.createdAt
+																	).toLocaleString()}{" "}
+																	-
+																	Confidence:{" "}
+																	{(
+																		alert.confidence_score *
+																		100
+																	).toFixed(
+																		0
+																	)}
+																	%
+																</Typography>
+															</Alert>
 														))}
 													</Box>
-													{alerts &&
-														alerts.length < 100 && (
-															<Button
-																onClick={() =>
-																	fetchAlerts(
-																		alertPage +
-																			1
-																	)
-																}
-																disabled={
-																	loadingAlerts
-																}
-															>
-																{loadingAlerts
-																	? "Loading..."
-																	: "Load More"}
-															</Button>
-														)}
-												</>
-											)}
-										</CardContent>
-									</Card>
+												)}
+											</CardContent>
+										</Card>
+									</Grid>
 								</Grid>
-							</Grid>
-						);
-					})()}
+							</Box>
+						)}
+					</Grid>
+				</Grid>
 
+				{/* Dialogs */}
 				<Dialog
 					open={addCarDialogOpen}
 					onClose={() => setAddCarDialogOpen(false)}
@@ -1688,10 +1808,14 @@ const CarlaDashboard = () => {
 						</Grid>
 					</DialogContent>
 					<DialogActions>
-						<Button onClick={() => setAddCarDialogOpen(false)}>
+						<Button
+							color="primary"
+							onClick={() => setAddCarDialogOpen(false)}
+						>
 							Cancel
 						</Button>
 						<Button
+							color="primary"
 							onClick={addNewCar}
 							variant="contained"
 							disabled={
@@ -1786,7 +1910,7 @@ const CarlaDashboard = () => {
 									onChange={(event, newValue) => {
 										handleEditFieldChange(
 											"status",
-											newValue ? newValue.value : "" // Pass the 'value' string ('active', 'inactive', etc.)
+											newValue ? newValue.value : ""
 										);
 									}}
 									renderInput={(params) => (
@@ -1855,10 +1979,14 @@ const CarlaDashboard = () => {
 						</Grid>
 					</DialogContent>
 					<DialogActions>
-						<Button onClick={() => setEditCarDialogOpen(false)}>
+						<Button
+							color="primary"
+							onClick={() => setEditCarDialogOpen(false)}
+						>
 							Cancel
 						</Button>
 						<Button
+							color="primary"
 							variant="contained"
 							onClick={handleSaveEditedCar}
 						>
@@ -1872,10 +2000,7 @@ const CarlaDashboard = () => {
 					autoHideDuration={4000}
 					onClose={() => setSnackbar({ ...snackbar, open: false })}
 					message={snackbar.message}
-					anchorOrigin={{
-						vertical: "bottom",
-						horizontal: "center",
-					}}
+					anchorOrigin={{ vertical: "bottom", horizontal: "center" }}
 				/>
 			</Container>
 		</DashboardLayout>
